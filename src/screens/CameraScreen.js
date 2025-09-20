@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Camera } from 'expo-camera';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext.js';
 
 const CameraScreen = ({ navigation }) => {
   const [hasPermission, setHasPermission] = useState(null);
@@ -9,6 +9,7 @@ const CameraScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
   const cameraRef = useRef(null);
   const { signOut } = useAuth();
+  const [isCameraReady, setIsCameraReady] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -18,7 +19,7 @@ const CameraScreen = ({ navigation }) => {
   }, []);
 
   const takePicture = async () => {
-    if (cameraRef.current) {
+    if (cameraRef.current && isCameraReady) {
       try {
         setIsLoading(true);
         const photo = await cameraRef.current.takePictureAsync({
@@ -26,7 +27,6 @@ const CameraScreen = ({ navigation }) => {
           base64: false,
           skipProcessing: true
         });
-        
         navigation.navigate('Preview', { photo });
       } catch (error) {
         Alert.alert('Error', 'No se pudo capturar la imagen');
@@ -65,25 +65,27 @@ const CameraScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Camera style={styles.camera} type={type} ref={cameraRef}>
+      <Camera
+        style={styles.camera}
+        type={type}
+        ref={cameraRef}
+        onCameraReady={() => setIsCameraReady(true)}
+      >
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.flipButton}
-            onPress={() => {
-              setType(
-                type === Camera.Constants.Type.back
-                  ? Camera.Constants.Type.front
-                  : Camera.Constants.Type.back
-              );
-            }}
+            onPress={() => setType(
+              type === Camera.Constants.Type.back
+                ? Camera.Constants.Type.front
+                : Camera.Constants.Type.back
+            )}
           >
-            <Text style={styles.flipText}> Voltar </Text>
+            <Text style={styles.flipText}>Voltear</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.captureButton, isLoading && styles.captureButtonDisabled]} 
+          <TouchableOpacity
+            style={[styles.captureButton, isLoading && styles.captureButtonDisabled]}
             onPress={takePicture}
-            disabled={isLoading}
+            disabled={isLoading || !isCameraReady}
           >
             {isLoading ? (
               <ActivityIndicator color="#fff" />
@@ -91,12 +93,11 @@ const CameraScreen = ({ navigation }) => {
               <View style={styles.captureInner} />
             )}
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.signOutButton}
             onPress={handleSignOut}
           >
-            <Text style={styles.signOutText}> Salir </Text>
+            <Text style={styles.signOutText}>Salir</Text>
           </TouchableOpacity>
         </View>
       </Camera>

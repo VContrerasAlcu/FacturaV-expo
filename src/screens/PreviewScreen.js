@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { invoiceService } from '../services/invoice';
+import { invoiceService } from '../services/invoice.js';
 
 const PreviewScreen = ({ navigation, route }) => {
   const { photo } = route.params;
