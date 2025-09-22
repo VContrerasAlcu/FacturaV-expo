@@ -1,14 +1,16 @@
+// src/screens/CameraScreen.js
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Camera } from 'expo-camera';
 import { useAuth } from '../context/AuthContext.js';
+import { Ionicons } from '@expo/vector-icons';
 
 const CameraScreen = ({ navigation }) => {
   const [hasPermission, setHasPermission] = useState(null);
   const [type, setType] = useState(Camera.Constants.Type.back);
   const [isLoading, setIsLoading] = useState(false);
   const cameraRef = useRef(null);
-  const { signOut } = useAuth();
+  const { signOut, capturedImages, addCapturedImage } = useAuth();
   const [isCameraReady, setIsCameraReady] = useState(false);
 
   useEffect(() => {
@@ -27,7 +29,23 @@ const CameraScreen = ({ navigation }) => {
           base64: false,
           skipProcessing: true
         });
-        navigation.navigate('Preview', { photo });
+        
+        // Agregar la imagen al contexto en lugar de navegar directamente
+        addCapturedImage(photo);
+        
+        // Mostrar feedback al usuario
+        Alert.alert(
+          'Imagen capturada',
+          `Tienes ${capturedImages.length + 1} imagen(es) lista(s) para enviar.`,
+          [
+            { text: 'Seguir capturando', style: 'default' },
+            { 
+              text: 'Revisar y enviar', 
+              style: 'default',
+              onPress: () => navigation.navigate('Preview')
+            }
+          ]
+        );
       } catch (error) {
         Alert.alert('Error', 'No se pudo capturar la imagen');
       } finally {
@@ -42,6 +60,14 @@ const CameraScreen = ({ navigation }) => {
     } catch (error) {
       Alert.alert('Error', 'No se pudo cerrar sesión');
     }
+  };
+
+  const goToPreview = () => {
+    if (capturedImages.length === 0) {
+      Alert.alert('Aviso', 'No hay imágenes capturadas');
+      return;
+    }
+    navigation.navigate('Preview');
   };
 
   if (hasPermission === null) {
@@ -71,6 +97,13 @@ const CameraScreen = ({ navigation }) => {
         ref={cameraRef}
         onCameraReady={() => setIsCameraReady(true)}
       >
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.counterBadge} onPress={goToPreview}>
+            <Ionicons name="images" size={20} color="white" />
+            <Text style={styles.counterText}>{capturedImages.length}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.flipButton}
@@ -82,6 +115,7 @@ const CameraScreen = ({ navigation }) => {
           >
             <Text style={styles.flipText}>Voltear</Text>
           </TouchableOpacity>
+          
           <TouchableOpacity
             style={[styles.captureButton, isLoading && styles.captureButtonDisabled]}
             onPress={takePicture}
@@ -93,14 +127,25 @@ const CameraScreen = ({ navigation }) => {
               <View style={styles.captureInner} />
             )}
           </TouchableOpacity>
+          
           <TouchableOpacity
-            style={styles.signOutButton}
-            onPress={handleSignOut}
+            style={styles.previewButton}
+            onPress={goToPreview}
+            disabled={capturedImages.length === 0}
           >
-            <Text style={styles.signOutText}>Salir</Text>
+            <Ionicons name="list" size={24} color="white" />
           </TouchableOpacity>
         </View>
       </Camera>
+      
+      <View style={styles.bottomContainer}>
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+        >
+          <Text style={styles.signOutText}>Salir</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -112,13 +157,32 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  header: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1,
+  },
+  counterBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 10,
+    borderRadius: 20,
+  },
+  counterText: {
+    color: 'white',
+    marginLeft: 5,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
   buttonContainer: {
     flex: 1,
     backgroundColor: 'transparent',
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-end',
-    margin: 20,
+    marginBottom: 30,
   },
   flipButton: {
     alignSelf: 'flex-end',
@@ -139,7 +203,6 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 35,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    marginBottom: 10,
   },
   captureButtonDisabled: {
     backgroundColor: 'rgba(255,255,255,0.1)',
@@ -150,16 +213,27 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: 'white',
   },
-  signOutButton: {
+  previewButton: {
     alignSelf: 'flex-end',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     padding: 15,
     borderRadius: 50,
+  },
+  bottomContainer: {
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  signOutButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,0,0,0.7)',
+    padding: 15,
+    borderRadius: 8,
   },
   signOutText: {
     fontSize: 18,
     color: 'white',
+    fontWeight: '600',
   },
   errorText: {
     fontSize: 18,

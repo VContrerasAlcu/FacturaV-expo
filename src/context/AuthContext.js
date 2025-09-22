@@ -1,3 +1,4 @@
+// src/context/AuthContext.js
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -6,6 +7,7 @@ export const AuthContext = React.createContext();
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [capturedImages, setCapturedImages] = React.useState([]);
 
   const signIn = async (token) => {
     try {
@@ -20,9 +22,26 @@ export const AuthProvider = ({ children }) => {
     try {
       await AsyncStorage.removeItem('token');
       setIsAuthenticated(false);
+      setCapturedImages([]); // Limpiar imágenes al cerrar sesión
     } catch (error) {
       console.error('Error signing out:', error);
     }
+  };
+
+  const addCapturedImage = (image) => {
+    setCapturedImages(prev => [...prev, {
+      ...image,
+      id: Date.now().toString(), // ID único para cada imagen
+      timestamp: new Date().toISOString()
+    }]);
+  };
+
+  const removeCapturedImage = (imageId) => {
+    setCapturedImages(prev => prev.filter(img => img.id !== imageId));
+  };
+
+  const clearCapturedImages = () => {
+    setCapturedImages([]);
   };
 
   React.useEffect(() => {
@@ -45,7 +64,11 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       isLoading,
       signIn,
-      signOut
+      signOut,
+      capturedImages,
+      addCapturedImage,
+      removeCapturedImage,
+      clearCapturedImages
     }}>
       {children}
     </AuthContext.Provider>

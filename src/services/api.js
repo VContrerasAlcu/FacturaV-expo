@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'https://facturav-servidor.onrender.com/'; // Cambiar por la URL de tu servidor
+const API_BASE_URL = 'https://facturav-servidor.onrender.com/'; 
 
 const api = axios.create({
   baseURL: API_BASE_URL,
