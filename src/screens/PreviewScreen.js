@@ -50,12 +50,61 @@ const compressImage = async (imageUri, maxSizeMB = 3) => {
   }
 };
 
+// 🆕 Componente para mostrar agrupación detectada
+const AgrupacionInfo = ({ agrupacion, onConfirm, onCancel }) => {
+  if (!agrupacion) return null;
+
+  return (
+    <View style={styles.agrupacionContainer}>
+      <Text style={styles.agrupacionTitle}>📑 Agrupación Detectada</Text>
+      <Text style={styles.agrupacionText}>
+        Se detectaron {agrupacion.total_facturas} factura(s) 
+        ({agrupacion.facturas_multipagina} multipágina)
+      </Text>
+      
+      <ScrollView style={styles.agrupacionList}>
+        {agrupacion.detalles.map((factura, index) => (
+          <View key={index} style={styles.facturaItem}>
+            <Text style={styles.facturaNombre}>
+              {factura.nombre_base} 
+              {factura.es_multipagina ? ` (${factura.paginas.length} páginas)` : ''}
+            </Text>
+            {factura.es_multipagina && (
+              <Text style={styles.paginasText}>
+                Páginas: {factura.paginas.map(p => p.numero_pagina).join(', ')}
+              </Text>
+            )}
+          </View>
+        ))}
+      </ScrollView>
+
+      <View style={styles.agrupacionActions}>
+        <TouchableOpacity 
+          style={[styles.button, styles.secondaryButton]}
+          onPress={onCancel}
+        >
+          <Text style={styles.buttonText}>Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.primaryButton]}
+          onPress={onConfirm}
+        >
+          <Text style={styles.buttonText}>Procesar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 const PreviewScreen = ({ navigation }) => {
   const { capturedImages, removeCapturedImage, clearCapturedImages } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [agrupacionDetectada, setAgrupacionDetectada] = useState(null);
+  const [mostrarAgrupacion, setMostrarAgrupacion] = useState(false);
 
-  const handleSendAll = async () => {
+  // 🆕 Función para detectar agrupación antes del envío
+  const detectarAgrupacion = async () => {
     if (capturedImages.length === 0) {
       Alert.alert('Error', 'No hay imágenes para enviar');
       return;
@@ -66,32 +115,60 @@ const PreviewScreen = ({ navigation }) => {
     try {
       const formData = new FormData();
       
-      console.log('Preparando envío de:', capturedImages.length, 'imágenes');
-      
       // Agregar todas las imágenes al FormData
       for (let i = 0; i < capturedImages.length; i++) {
         const image = capturedImages[i];
         const compressedUri = await compressImage(image.uri);
         
-        // Crear el objeto file CORRECTAMENTE
         const file = {
           uri: compressedUri,
           type: 'image/jpeg',
-          name: `invoice_${i + 1}.jpg`
+          name: image.uri.split('/').pop() || `invoice_${i + 1}.jpg`
         };
         
-        // IMPORTANTE: Usar el mismo nombre 'files' para todos los archivos
         formData.append('files', file);
-        console.log(`Imagen ${i + 1} agregada al FormData`);
       }
 
-      console.log('Enviando FormData con', capturedImages.length, 'archivos');
+      console.log('Detectando agrupación...');
+      const agrupacion = await invoiceService.detectAgrupacion(formData);
+      setAgrupacionDetectada(agrupacion);
+      setMostrarAgrupacion(true);
       
-      const response = await invoiceService.uploadInvoices(formData);
-      console.log('Respuesta del servidor:', response);
+    } catch (error) {
+      console.error('Error detectando agrupación:', error);
+      // Si falla la detección, proceder con envío normal
+      handleSendAll();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 🆕 Función para enviar con procesamiento multipágina
+  const handleSendMultipage = async () => {
+    setIsLoading(true);
+    setMostrarAgrupacion(false);
+    
+    try {
+      const formData = new FormData();
+      
+      for (let i = 0; i < capturedImages.length; i++) {
+        const image = capturedImages[i];
+        const compressedUri = await compressImage(image.uri);
+        
+        const file = {
+          uri: compressedUri,
+          type: 'image/jpeg',
+          name: image.uri.split('/').pop() || `invoice_${i + 1}.jpg`
+        };
+        
+        formData.append('files', file);
+      }
+
+      console.log('Enviando como multipágina...');
+      const response = await invoiceService.uploadMultipage(formData);
       
       if (response.success) {
-        Alert.alert('Éxito', response.message, [
+        Alert.alert('✅ Éxito', response.message, [
           { 
             text: 'OK', 
             onPress: () => {
@@ -101,14 +178,70 @@ const PreviewScreen = ({ navigation }) => {
           }
         ]);
       } else {
-        Alert.alert('Procesamiento completado', response.message);
+        Alert.alert('⚠️ Procesamiento completado', response.message);
       }
     } catch (error) {
-      console.error('Error al subir facturas:', error);
-      Alert.alert('Error', 'Error al procesar las imágenes. Inténtalo de nuevo.');
+      console.error('Error al subir facturas multipágina:', error);
+      Alert.alert('❌ Error', 'Error al procesar las imágenes. Inténtalo de nuevo.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 🆕 Función para enviar con procesamiento normal
+  const handleSendNormal = async () => {
+    setIsLoading(true);
+    setMostrarAgrupacion(false);
+    
+    try {
+      const formData = new FormData();
+      
+      for (let i = 0; i < capturedImages.length; i++) {
+        const image = capturedImages[i];
+        const compressedUri = await compressImage(image.uri);
+        
+        const file = {
+          uri: compressedUri,
+          type: 'image/jpeg',
+          name: image.uri.split('/').pop() || `invoice_${i + 1}.jpg`
+        };
+        
+        formData.append('files', file);
+      }
+
+      console.log('Enviando procesamiento normal...');
+      const response = await invoiceService.uploadInvoices(formData);
+      
+      if (response.success) {
+        Alert.alert('✅ Éxito', response.message, [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              clearCapturedImages();
+              navigation.navigate('Camera');
+            }
+          }
+        ]);
+      } else {
+        Alert.alert('⚠️ Procesamiento completado', response.message);
+      }
+    } catch (error) {
+      console.error('Error al subir facturas:', error);
+      Alert.alert('❌ Error', 'Error al procesar las imágenes. Inténtalo de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Función original modificada para usar detección automática
+  const handleSendAll = async () => {
+    if (capturedImages.length === 0) {
+      Alert.alert('Error', 'No hay imágenes para enviar');
+      return;
+    }
+
+    // 🆕 Primero detectar agrupación
+    await detectarAgrupacion();
   };
 
   const handleRemoveImage = (imageId) => {
@@ -153,6 +286,22 @@ const PreviewScreen = ({ navigation }) => {
     );
   };
 
+  // 🆕 Si estamos mostrando la agrupación, mostrar ese modal
+  if (mostrarAgrupacion && agrupacionDetectada) {
+    return (
+      <View style={styles.modalContainer}>
+        <AgrupacionInfo 
+          agrupacion={agrupacionDetectada}
+          onConfirm={handleSendMultipage}
+          onCancel={() => {
+            setMostrarAgrupacion(false);
+            handleSendNormal();
+          }}
+        />
+      </View>
+    );
+  }
+
   if (capturedImages.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -174,6 +323,11 @@ const PreviewScreen = ({ navigation }) => {
         <Text style={styles.title}>
           {capturedImages.length} imagen(es) capturada(s)
         </Text>
+        {agrupacionDetectada && (
+          <Text style={styles.agrupacionBadge}>
+            📑 {agrupacionDetectada.facturas_multipagina} multipágina detectadas
+          </Text>
+        )}
       </View>
 
       <View style={styles.previewContainer}>
@@ -230,16 +384,14 @@ const PreviewScreen = ({ navigation }) => {
         </ScrollView>
       </View>
 
-      {/* BOTONES CORREGIDOS */}
       <View style={styles.actions}>
         {isLoading ? (
           <View style={styles.loading}>
             <ActivityIndicator size="large" color="#007AFF" />
-            <Text>Enviando imágenes...</Text>
+            <Text>Procesando imágenes...</Text>
           </View>
         ) : (
           <>
-            {/* Botón principal */}
             <TouchableOpacity 
               style={[styles.button, styles.primaryButton]}
               onPress={handleSendAll}
@@ -250,7 +402,6 @@ const PreviewScreen = ({ navigation }) => {
               </Text>
             </TouchableOpacity>
 
-            {/* Botones secundarios en fila */}
             <View style={styles.secondaryButtons}>
               <TouchableOpacity 
                 style={[styles.button, styles.secondaryButton, styles.addButton]}
@@ -275,7 +426,69 @@ const PreviewScreen = ({ navigation }) => {
   );
 };
 
+// 🆕 Estilos para el modal de agrupación
 const styles = StyleSheet.create({
+  // ... (todos los estilos anteriores se mantienen igual)
+  
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  agrupacionContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  agrupacionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  agrupacionText: {
+    fontSize: 16,
+    marginBottom: 15,
+    textAlign: 'center',
+    color: '#666',
+  },
+  agrupacionList: {
+    maxHeight: 200,
+    marginBottom: 20,
+  },
+  facturaItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  facturaNombre: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  paginasText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  agrupacionActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  agrupacionBadge: {
+    fontSize: 12,
+    color: '#007AFF',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  
+  // ESTILOS EXISTENTES (se mantienen igual)
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -375,7 +588,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  // ESTILOS DE BOTONES CORREGIDOS
   button: {
     flexDirection: 'row',
     alignItems: 'center',
