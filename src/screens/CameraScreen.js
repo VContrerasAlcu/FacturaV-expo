@@ -41,23 +41,37 @@ const CameraScreen = ({ navigation }) => {
         });
         
         if (isMultiPageMode) {
-          // Agregar página al grupo multipágina
-          addPageToMultiPageGroup(photo);
-          Alert.alert(
-            'Página agregada',
-            `Página ${currentMultiPageGroup.pages.length + 1} capturada. ¿Continuar con más páginas?`,
-            [
-              { 
-                text: 'Agregar otra página', 
-                style: 'default' 
-              },
-              { 
-                text: 'Finalizar factura', 
-                style: 'default',
-                onPress: completeMultiPageCapture
-              }
-            ]
-          );
+          if (!currentMultiPageGroup) {
+            console.warn('Modo multipágina activo pero no hay grupo definido');
+            return;
+          }
+          
+          // ✅ USAR LA NUEVA FUNCIÓN QUE RETORNA EL ESTADO ACTUALIZADO
+          const result = await addPageToMultiPageGroup(photo);
+          
+          if (result.success) {
+            console.log(`📄 Página ${result.pagesCount} agregada correctamente`);
+            
+            Alert.alert(
+              'Página capturada',
+              `Página ${result.pagesCount} de la factura multipágina.`,
+              [
+                { 
+                  text: 'Agregar otra página', 
+                  style: 'default' 
+                },
+                { 
+                  text: 'Finalizar factura', 
+                  style: 'default',
+                  onPress: () => {
+                    handleCompleteMultiPage(result.pagesCount);
+                  }
+                }
+              ]
+            );
+          } else {
+            Alert.alert('Error', 'No se pudo agregar la página a la factura multipágina');
+          }
         } else {
           // Captura normal de una sola página
           addCapturedImage(photo);
@@ -75,10 +89,79 @@ const CameraScreen = ({ navigation }) => {
           );
         }
       } catch (error) {
+        console.error('Error en takePicture:', error);
         Alert.alert('Error', 'No se pudo capturar la imagen');
       } finally {
         setIsLoading(false);
       }
+    }
+  };
+
+  // ✅ FUNCIÓN MEJORADA PARA FINALIZAR MULTIPÁGINA
+  const handleCompleteMultiPage = (expectedPagesCount) => {
+    if (!currentMultiPageGroup) {
+      Alert.alert('Error', 'No hay factura multipágina activa');
+      return;
+    }
+
+    console.log(`🎯 Finalizando factura multipágina. Esperadas: ${expectedPagesCount} páginas`);
+    
+    // Completar la captura multipágina
+    const result = completeMultiPageCapture();
+    
+    if (result.success) {
+      console.log(`✅ Factura multipágina completada con ${result.pagesCount} páginas`);
+      
+      setTimeout(() => {
+        Alert.alert(
+          '✅ Factura multipágina completada',
+          `Se han capturado ${result.pagesCount} páginas correctamente. ¿Qué quieres hacer ahora?`,
+          [
+            { 
+              text: 'Capturar otra factura', 
+              style: 'cancel' 
+            },
+            { 
+              text: 'Revisar y enviar', 
+              style: 'default',
+              onPress: () => {
+                console.log('📋 Navegando al Preview');
+                navigation.navigate('Preview');
+              }
+            }
+          ]
+        );
+      }, 200);
+    } else {
+      Alert.alert('Error', 'No se pudo completar la factura multipágina');
+    }
+  };
+
+  const handleGoToPreview = () => {
+    // Si hay una factura multipágina en progreso, ofrecer finalizarla
+    if (isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0) {
+      const pagesCount = currentMultiPageGroup.pages.length;
+      Alert.alert(
+        'Factura multipágina en progreso',
+        `Tienes ${pagesCount} página(s) capturada(s) sin finalizar. ¿Quieres finalizar esta factura antes de revisar?`,
+        [
+          { 
+            text: 'Continuar capturando', 
+            style: 'cancel' 
+          },
+          { 
+            text: 'Finalizar y revisar', 
+            style: 'default',
+            onPress: () => {
+              handleCompleteMultiPage(pagesCount);
+            }
+          }
+        ]
+      );
+    } else if (capturedImages.length === 0) {
+      Alert.alert('Aviso', 'No hay imágenes capturadas');
+    } else {
+      navigation.navigate('Preview');
     }
   };
 
@@ -90,24 +173,19 @@ const CameraScreen = ({ navigation }) => {
     }
   };
 
-  const goToPreview = () => {
-    if (capturedImages.length === 0) {
-      Alert.alert('Aviso', 'No hay imágenes capturadas');
-      return;
-    }
-    navigation.navigate('Preview');
-  };
-
   const handleStartMultiPage = () => {
     Alert.alert(
       'Factura Multipágina',
-      'Vas a capturar una factura con múltiples páginas. Captura todas las páginas en orden.',
+      'Vas a capturar una factura con múltiples páginas. Después de cada página podrás elegir agregar más o finalizar la factura.',
       [
         { text: 'Cancelar', style: 'cancel' },
         { 
           text: 'Comenzar', 
           style: 'default',
-          onPress: startMultiPageCapture
+          onPress: () => {
+            startMultiPageCapture();
+            console.log('🚀 Iniciando captura multipágina');
+          }
         }
       ]
     );
@@ -140,23 +218,37 @@ const CameraScreen = ({ navigation }) => {
         ref={cameraRef}
         onCameraReady={() => setIsCameraReady(true)}
       >
-        {/* Header con información del estado */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.counterBadge} onPress={goToPreview}>
+          <TouchableOpacity style={styles.counterBadge} onPress={handleGoToPreview}>
             <Ionicons name="images" size={20} color="white" />
             <Text style={styles.counterText}>{capturedImages.length}</Text>
+            {isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0 && (
+              <Text style={styles.counterSubText}>+{currentMultiPageGroup.pages.length} en progreso</Text>
+            )}
           </TouchableOpacity>
 
-          {/* Indicador de modo multipágina */}
-          {isMultiPageMode && (
+          {isMultiPageMode && currentMultiPageGroup && (
             <View style={styles.multiPageBadge}>
               <Ionicons name="document" size={16} color="white" />
               <Text style={styles.multiPageText}>
-                Multipágina: {currentMultiPageGroup.pages.length} pág.
+                Multipágina: {currentMultiPageGroup?.pages?.length || 0} pág.
               </Text>
               <TouchableOpacity 
                 style={styles.cancelMultiPage}
-                onPress={cancelMultiPageCapture}
+                onPress={() => {
+                  Alert.alert(
+                    'Cancelar captura multipágina',
+                    '¿Estás seguro de que quieres cancelar esta factura multipágina? Se perderán todas las páginas capturadas.',
+                    [
+                      { text: 'Continuar', style: 'cancel' },
+                      { 
+                        text: 'Cancelar', 
+                        style: 'destructive',
+                        onPress: cancelMultiPageCapture
+                      }
+                    ]
+                  );
+                }}
               >
                 <Ionicons name="close" size={16} color="white" />
               </TouchableOpacity>
@@ -165,7 +257,6 @@ const CameraScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.buttonContainer}>
-          {/* Botón para voltear cámara */}
           <TouchableOpacity
             style={styles.flipButton}
             onPress={() => setType(
@@ -177,7 +268,6 @@ const CameraScreen = ({ navigation }) => {
             <Text style={styles.flipText}>Voltear</Text>
           </TouchableOpacity>
           
-          {/* Botón de captura principal */}
           <TouchableOpacity
             style={[styles.captureButton, isLoading && styles.captureButtonDisabled]}
             onPress={takePicture}
@@ -190,17 +280,15 @@ const CameraScreen = ({ navigation }) => {
             )}
           </TouchableOpacity>
           
-          {/* Botón de vista previa */}
           <TouchableOpacity
-            style={styles.previewButton}
-            onPress={goToPreview}
-            disabled={capturedImages.length === 0}
+            style={[styles.previewButton, (capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)) && styles.previewButtonDisabled]}
+            onPress={handleGoToPreview}
+            disabled={capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)}
           >
             <Ionicons name="list" size={24} color="white" />
           </TouchableOpacity>
         </View>
 
-        {/* Botón para modo multipágina */}
         {!isMultiPageMode && (
           <View style={styles.multiPageContainer}>
             <TouchableOpacity
@@ -226,6 +314,7 @@ const CameraScreen = ({ navigation }) => {
   );
 };
 
+// Los estilos se mantienen igual...
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -248,6 +337,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginBottom: 10,
   },
+  counterText: {
+    color: 'white',
+    marginLeft: 5,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  counterSubText: {
+    color: '#4CAF50',
+    marginLeft: 5,
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
   multiPageBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -264,12 +365,6 @@ const styles = StyleSheet.create({
   cancelMultiPage: {
     marginLeft: 8,
     padding: 2,
-  },
-  counterText: {
-    color: 'white',
-    marginLeft: 5,
-    fontWeight: 'bold',
-    fontSize: 16,
   },
   buttonContainer: {
     flex: 1,
@@ -314,6 +409,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     padding: 15,
     borderRadius: 50,
+  },
+  previewButtonDisabled: {
+    opacity: 0.3,
   },
   multiPageContainer: {
     position: 'absolute',

@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { Ionicons } from '@expo/vector-icons';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
+import { pdfService } from '../services/pdfGenerator.js'; 
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -62,48 +63,59 @@ const PreviewScreen = ({ navigation }) => {
   // Preparar datos para enviar al servidor
   const prepareFormData = async () => {
     const formData = new FormData();
-    let fileIndex = 0;
+    const tempFilesToCleanup = []; // ✅ PARA LIMPIAR ARCHIVOS TEMPORALES
 
-    for (let i = 0; i < capturedImages.length; i++) {
-      const image = capturedImages[i];
-      
-      if (image.isMultiPage && image.pages) {
-        // Es un grupo multipágina - enviar todas las páginas como un solo documento
-        console.log(`📄 Preparando grupo multipágina con ${image.pages.length} páginas`);
+    console.log(`📦 Preparando ${capturedImages.length} elementos para envío como PDF`);
+
+    try {
+      for (let i = 0; i < capturedImages.length; i++) {
+        const image = capturedImages[i];
         
-        for (let pageIndex = 0; pageIndex < image.pages.length; pageIndex++) {
-          const page = image.pages[pageIndex];
-          const compressedUri = await compressImage(page.uri);
-          
-          const file = {
-            uri: compressedUri,
-            type: 'image/jpeg',
-            name: `multipage_${fileIndex}_page_${pageIndex + 1}.jpg`
-          };
-          
-          // Usar el mismo nombre para agrupar las páginas
-          formData.append('files', file);
-          formData.append('multipage_groups', `multipage_${fileIndex}`);
+        console.log(`📄 Procesando elemento ${i + 1}:`, {
+          isMultiPage: image.isMultiPage,
+          pagesCount: image.pages ? image.pages.length : 0
+        });
+
+        let pdfFile;
+
+        if (image.isMultiPage && image.pages) {
+          // ✅ CONVERTIR FACTURA MULTIPÁGINA A UN PDF
+          console.log(`🔄 Convirtiendo factura multipágina con ${image.pages.length} páginas a PDF`);
+          pdfFile = await pdfService.convertImagesToMultiPagePDF(
+            image.pages, 
+            `factura_multipagina_${i + 1}.pdf`
+          );
+        } else {
+          // ✅ CONVERTIR FACTURA SIMPLE A PDF
+          console.log(`🔄 Convirtiendo factura simple a PDF`);
+          pdfFile = await pdfService.convertImageToPDF(
+            image.uri, 
+            `factura_${i + 1}.pdf`
+          );
         }
-        fileIndex++;
-      } else {
-        // Es una imagen individual
-        const compressedUri = await compressImage(image.uri);
-        
+
+        // Agregar PDF al FormData
         const file = {
-          uri: compressedUri,
-          type: 'image/jpeg',
-          name: `invoice_${fileIndex}.jpg`
+          uri: pdfFile.uri,
+          type: 'application/pdf',
+          name: pdfFile.name
         };
         
         formData.append('files', file);
-        formData.append('multipage_groups', 'single');
-        fileIndex++;
+        tempFilesToCleanup.push(pdfFile.uri); // ✅ GUARDAR PARA LIMPIAR DESPUÉS
+        
+        console.log(`✅ PDF agregado: ${pdfFile.name}`);
       }
-    }
 
-    return formData;
-  };
+      console.log(`✅ FormData preparado con ${capturedImages.length} archivos PDF`);
+      return { formData, tempFilesToCleanup };
+
+    } catch (error) {
+      // ✅ LIMPIAR ARCHIVOS TEMPORALES EN CASO DE ERROR
+      await pdfService.cleanupTempFiles(tempFilesToCleanup);
+      throw error;
+    }
+};
 
   const handleSendAll = async () => {
     if (capturedImages.length === 0) {
@@ -112,11 +124,14 @@ const PreviewScreen = ({ navigation }) => {
     }
 
     setIsLoading(true);
+    let tempFilesToCleanup = [];
     
     try {
-      const formData = await prepareFormData();
+      // ✅ OBTENER FORMData Y ARCHIVOS TEMPORALES
+      const { formData, tempFilesToCleanup: tempFiles } = await prepareFormData();
+      tempFilesToCleanup = tempFiles;
       
-      console.log('Enviando FormData con', capturedImages.length, 'elementos');
+      console.log('Enviando FormData con', capturedImages.length, 'archivos PDF');
       
       const response = await invoiceService.uploadInvoices(formData);
       console.log('Respuesta del servidor:', response);
@@ -138,6 +153,8 @@ const PreviewScreen = ({ navigation }) => {
       console.error('Error al subir facturas:', error);
       Alert.alert('Error', 'Error al procesar las imágenes. Inténtalo de nuevo.');
     } finally {
+      // ✅ LIMPIAR ARCHIVOS TEMPORALES
+      await pdfService.cleanupTempFiles(tempFilesToCleanup);
       setIsLoading(false);
     }
   };
