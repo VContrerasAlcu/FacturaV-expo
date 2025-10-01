@@ -51,9 +51,59 @@ const compressImage = async (imageUri, maxSizeMB = 3) => {
 };
 
 const PreviewScreen = ({ navigation }) => {
-  const { capturedImages, removeCapturedImage, clearCapturedImages } = useAuth();
+  const { 
+    capturedImages, 
+    removeCapturedImage, 
+    clearCapturedImages 
+  } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Preparar datos para enviar al servidor
+  const prepareFormData = async () => {
+    const formData = new FormData();
+    let fileIndex = 0;
+
+    for (let i = 0; i < capturedImages.length; i++) {
+      const image = capturedImages[i];
+      
+      if (image.isMultiPage && image.pages) {
+        // Es un grupo multipágina - enviar todas las páginas como un solo documento
+        console.log(`📄 Preparando grupo multipágina con ${image.pages.length} páginas`);
+        
+        for (let pageIndex = 0; pageIndex < image.pages.length; pageIndex++) {
+          const page = image.pages[pageIndex];
+          const compressedUri = await compressImage(page.uri);
+          
+          const file = {
+            uri: compressedUri,
+            type: 'image/jpeg',
+            name: `multipage_${fileIndex}_page_${pageIndex + 1}.jpg`
+          };
+          
+          // Usar el mismo nombre para agrupar las páginas
+          formData.append('files', file);
+          formData.append('multipage_groups', `multipage_${fileIndex}`);
+        }
+        fileIndex++;
+      } else {
+        // Es una imagen individual
+        const compressedUri = await compressImage(image.uri);
+        
+        const file = {
+          uri: compressedUri,
+          type: 'image/jpeg',
+          name: `invoice_${fileIndex}.jpg`
+        };
+        
+        formData.append('files', file);
+        formData.append('multipage_groups', 'single');
+        fileIndex++;
+      }
+    }
+
+    return formData;
+  };
 
   const handleSendAll = async () => {
     if (capturedImages.length === 0) {
@@ -64,28 +114,9 @@ const PreviewScreen = ({ navigation }) => {
     setIsLoading(true);
     
     try {
-      const formData = new FormData();
+      const formData = await prepareFormData();
       
-      console.log('Preparando envío de:', capturedImages.length, 'imágenes');
-      
-      // Agregar todas las imágenes al FormData
-      for (let i = 0; i < capturedImages.length; i++) {
-        const image = capturedImages[i];
-        const compressedUri = await compressImage(image.uri);
-        
-        // Crear el objeto file CORRECTAMENTE
-        const file = {
-          uri: compressedUri,
-          type: 'image/jpeg',
-          name: `invoice_${i + 1}.jpg`
-        };
-        
-        // IMPORTANTE: Usar el mismo nombre 'files' para todos los archivos
-        formData.append('files', file);
-        console.log(`Imagen ${i + 1} agregada al FormData`);
-      }
-
-      console.log('Enviando FormData con', capturedImages.length, 'archivos');
+      console.log('Enviando FormData con', capturedImages.length, 'elementos');
       
       const response = await invoiceService.uploadInvoices(formData);
       console.log('Respuesta del servidor:', response);
@@ -153,6 +184,31 @@ const PreviewScreen = ({ navigation }) => {
     );
   };
 
+  const getDisplayImage = (image) => {
+    if (image.isMultiPage && image.pages && image.pages.length > 0) {
+      return image.pages[0]; // Usar primera página como thumbnail
+    }
+    return image;
+  };
+
+  const getImageCountText = () => {
+    const singleImages = capturedImages.filter(img => !img.isMultiPage).length;
+    const multiPageGroups = capturedImages.filter(img => img.isMultiPage).length;
+    const totalPages = capturedImages.reduce((total, img) => {
+      if (img.isMultiPage && img.pages) {
+        return total + img.pages.length;
+      }
+      return total + 1;
+    }, 0);
+
+    let text = `${totalPages} página(s)`;
+    if (multiPageGroups > 0) {
+      text += ` en ${singleImages + multiPageGroups} documento(s)`;
+    }
+    
+    return text;
+  };
+
   if (capturedImages.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -168,17 +224,25 @@ const PreviewScreen = ({ navigation }) => {
     );
   }
 
+  const currentImage = capturedImages[currentIndex];
+  const displayImage = getDisplayImage(currentImage);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>
-          {capturedImages.length} imagen(es) capturada(s)
+          {getImageCountText()}
         </Text>
+        {currentImage.isMultiPage && (
+          <Text style={styles.multiPageInfo}>
+            📄 Factura multipágina ({currentImage.pages.length} páginas)
+          </Text>
+        )}
       </View>
 
       <View style={styles.previewContainer}>
         <Image 
-          source={{ uri: capturedImages[currentIndex]?.uri }} 
+          source={{ uri: displayImage.uri }} 
           style={styles.previewImage} 
         />
         
@@ -213,12 +277,17 @@ const PreviewScreen = ({ navigation }) => {
               style={styles.thumbnailContainer}
             >
               <Image 
-                source={{ uri: image.uri }} 
+                source={{ uri: getDisplayImage(image).uri }} 
                 style={[
                   styles.thumbnail,
                   index === currentIndex && styles.thumbnailActive
                 ]} 
               />
+              {image.isMultiPage && (
+                <View style={styles.multiPageBadge}>
+                  <Text style={styles.multiPageBadgeText}>{image.pages.length}</Text>
+                </View>
+              )}
               <TouchableOpacity 
                 style={styles.deleteThumbnail}
                 onPress={() => handleRemoveImage(image.id)}
@@ -230,7 +299,6 @@ const PreviewScreen = ({ navigation }) => {
         </ScrollView>
       </View>
 
-      {/* BOTONES CORREGIDOS */}
       <View style={styles.actions}>
         {isLoading ? (
           <View style={styles.loading}>
@@ -239,18 +307,16 @@ const PreviewScreen = ({ navigation }) => {
           </View>
         ) : (
           <>
-            {/* Botón principal */}
             <TouchableOpacity 
               style={[styles.button, styles.primaryButton]}
               onPress={handleSendAll}
             >
               <Ionicons name="send" size={20} color="white" />
               <Text style={styles.buttonText}>
-                Enviar {capturedImages.length} imagen(es)
+                Enviar {getImageCountText()}
               </Text>
             </TouchableOpacity>
 
-            {/* Botones secundarios en fila */}
             <View style={styles.secondaryButtons}>
               <TouchableOpacity 
                 style={[styles.button, styles.secondaryButton, styles.addButton]}
@@ -299,6 +365,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  multiPageInfo: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
   },
   previewContainer: {
     flex: 1,
@@ -356,6 +428,22 @@ const styles = StyleSheet.create({
   thumbnailActive: {
     borderColor: '#007AFF',
   },
+  multiPageBadge: {
+    position: 'absolute',
+    top: -5,
+    left: -5,
+    backgroundColor: '#4CAF50',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  multiPageBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   deleteThumbnail: {
     position: 'absolute',
     top: -5,
@@ -375,7 +463,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  // ESTILOS DE BOTONES CORREGIDOS
   button: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -386,7 +473,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   primaryButton: {
-    backgroundColor: '#34C759', // Verde
+    backgroundColor: '#34C759',
   },
   secondaryButtons: {
     flexDirection: 'row',
@@ -398,10 +485,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   addButton: {
-    backgroundColor: '#007AFF', // Azul
+    backgroundColor: '#007AFF',
   },
   deleteButton: {
-    backgroundColor: '#FF3B30', // Rojo
+    backgroundColor: '#FF3B30',
   },
   buttonText: {
     color: 'white',

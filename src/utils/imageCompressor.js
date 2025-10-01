@@ -1,5 +1,6 @@
 // src/utils/imageCompressor.js
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system'; 
 
 export const compressImage = async (imageUri, maxSizeMB = 3) => {
   try {
