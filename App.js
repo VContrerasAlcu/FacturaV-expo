@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerRootComponent } from 'expo';
 import { AuthProvider, useAuth } from './src/context/AuthContext.js';
+import ImageTipsScreen from './src/screens/ImageTipsScreen.js';
 
 // Importar tus pantallas
 import LoginScreen from './src/screens/LoginScreen.js';
@@ -33,6 +34,7 @@ function AppContent() {
           <>
             <Stack.Screen name="Camera" component={CameraScreen} />
             <Stack.Screen name="Preview" component={PreviewScreen} />
+            <Stack.Screen name="ImageTips" component={ImageTipsScreen} />
           </>
         ) : (
           <>

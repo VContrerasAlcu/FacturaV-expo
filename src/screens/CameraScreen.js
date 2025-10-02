@@ -4,12 +4,15 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } fr
 import { Camera } from 'expo-camera';
 import { useAuth } from '../context/AuthContext.js';
 import { Ionicons } from '@expo/vector-icons';
-import { useIsFocused } from '@react-navigation/native'; // ✅ NUEVO IMPORT
+import { useIsFocused } from '@react-navigation/native';
 
 const CameraScreen = ({ navigation }) => {
   const [hasPermission, setHasPermission] = useState(null);
   const [type, setType] = useState(Camera.Constants.Type.back);
   const [isLoading, setIsLoading] = useState(false);
+  const [flashMode, setFlashMode] = useState(Camera.Constants.FlashMode.off);
+  const [cameraRatio, setCameraRatio] = useState('16:9');
+  const [showTipsOverlay, setShowTipsOverlay] = useState(false);
   const cameraRef = useRef(null);
   const { 
     signOut, 
@@ -24,7 +27,6 @@ const CameraScreen = ({ navigation }) => {
   } = useAuth();
   const [isCameraReady, setIsCameraReady] = useState(false);
   
-  // ✅ NUEVO: Verificar si la pantalla está enfocada
   const isFocused = useIsFocused();
 
   useEffect(() => {
@@ -34,25 +36,27 @@ const CameraScreen = ({ navigation }) => {
     })();
   }, []);
 
-  // ✅ NUEVO: Reiniciar estado de la cámara cuando la pantalla gana foco
   useEffect(() => {
     if (isFocused) {
       console.log('📷 CameraScreen enfocada - reiniciando cámara');
       setIsCameraReady(false);
-      // La cámara se reinicializará cuando se monte el componente Camera
+      setShowTipsOverlay(false);
     }
   }, [isFocused]);
 
   const takePicture = async () => {
-    // ✅ VERIFICAR SI LA CÁMARA ESTÁ LISTA Y LA PANTALLA ENFOCADA
     if (cameraRef.current && isCameraReady && isFocused) {
       try {
         setIsLoading(true);
+        
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.7,
+          quality: 0.9,
           base64: false,
-          skipProcessing: true
+          skipProcessing: false,
+          exif: true,
         });
+        
+        console.log('📸 Foto capturada con calidad mejorada');
         
         if (isMultiPageMode) {
           if (!currentMultiPageGroup) {
@@ -86,7 +90,6 @@ const CameraScreen = ({ navigation }) => {
             Alert.alert('Error', 'No se pudo agregar la página a la factura multipágina');
           }
         } else {
-          // Captura normal de una sola página
           addCapturedImage(photo);
           Alert.alert(
             'Imagen capturada',
@@ -108,7 +111,6 @@ const CameraScreen = ({ navigation }) => {
         setIsLoading(false);
       }
     } else {
-      // ✅ MEJOR MENSAJE DE ERROR
       let errorMessage = 'La cámara no está lista';
       if (!isFocused) errorMessage = 'La pantalla de cámara no está activa';
       if (!isCameraReady) errorMessage = 'La cámara se está inicializando';
@@ -119,7 +121,18 @@ const CameraScreen = ({ navigation }) => {
     }
   };
 
-  // ✅ FUNCIÓN MEJORADA PARA FINALIZAR MULTIPÁGINA
+  const toggleFlash = () => {
+    setFlashMode(
+      flashMode === Camera.Constants.FlashMode.off
+        ? Camera.Constants.FlashMode.on
+        : Camera.Constants.FlashMode.off
+    );
+  };
+
+  const toggleTipsOverlay = () => {
+    setShowTipsOverlay(!showTipsOverlay);
+  };
+
   const handleCompleteMultiPage = (expectedPagesCount) => {
     if (!currentMultiPageGroup) {
       Alert.alert('Error', 'No hay factura multipágina activa');
@@ -159,7 +172,6 @@ const CameraScreen = ({ navigation }) => {
   };
 
   const handleGoToPreview = () => {
-    // Si hay una factura multipágina en progreso, ofrecer finalizarla
     if (isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0) {
       const pagesCount = currentMultiPageGroup.pages.length;
       Alert.alert(
@@ -215,7 +227,8 @@ const CameraScreen = ({ navigation }) => {
   if (hasPermission === null) {
     return (
       <View style={styles.container}>
-        <Text>Solicitando permisos de cámara...</Text>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Solicitando permisos de cámara...</Text>
       </View>
     );
   }
@@ -233,28 +246,42 @@ const CameraScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      {/* ✅ SOLO MOSTRAR CÁMARA SI LA PANTALLA ESTÁ ENFOCADA */}
       {isFocused ? (
         <Camera
           style={styles.camera}
           type={type}
           ref={cameraRef}
           onCameraReady={() => {
-            console.log('✅ Cámara lista');
+            console.log('✅ Cámara lista y configurada');
             setIsCameraReady(true);
           }}
+          autoFocus={Camera.Constants.AutoFocus.on}
+          flashMode={flashMode}
+          whiteBalance={Camera.Constants.WhiteBalance.auto}
+          ratio={cameraRatio}
           onMountError={(error) => {
             console.error('❌ Error montando cámara:', error);
             Alert.alert('Error', 'No se pudo inicializar la cámara');
           }}
         >
-          <View style={styles.header}>
+          {/* ✅ ELEMENTOS INTERACTIVOS CON zIndex ALTO (POR ENCIMA DEL OVERLAY) */}
+          
+          {/* HEADER - POR ENCIMA DE TODO */}
+          <View style={[styles.header, { zIndex: 100 }]}>
             <TouchableOpacity style={styles.counterBadge} onPress={handleGoToPreview}>
               <Ionicons name="images" size={20} color="white" />
               <Text style={styles.counterText}>{capturedImages.length}</Text>
               {isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0 && (
                 <Text style={styles.counterSubText}>+{currentMultiPageGroup.pages.length} en progreso</Text>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
+              <Ionicons 
+                name={flashMode === Camera.Constants.FlashMode.on ? "flash" : "flash-off"} 
+                size={24} 
+                color="white" 
+              />
             </TouchableOpacity>
 
             {isMultiPageMode && currentMultiPageGroup && (
@@ -286,7 +313,19 @@ const CameraScreen = ({ navigation }) => {
             )}
           </View>
 
-          <View style={styles.buttonContainer}>
+          {/* BOTONES PRINCIPALES - POR ENCIMA DE TODO */}
+          <View style={[styles.buttonContainer, { zIndex: 100 }]}>
+            <TouchableOpacity
+              style={styles.tipsButton}
+              onPress={toggleTipsOverlay}
+            >
+              <Ionicons 
+                name={showTipsOverlay ? "eye-off" : "help-circle"} 
+                size={24} 
+                color="white" 
+              />
+            </TouchableOpacity>
+            
             <TouchableOpacity
               style={styles.flipButton}
               onPress={() => setType(
@@ -295,7 +334,7 @@ const CameraScreen = ({ navigation }) => {
                   : Camera.Constants.Type.back
               )}
             >
-              <Text style={styles.flipText}>Voltear</Text>
+              <Ionicons name="camera-reverse" size={24} color="white" />
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -319,8 +358,9 @@ const CameraScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
+          {/* BOTÓN MULTIPÁGINA - POR ENCIMA DE TODO */}
           {!isMultiPageMode && (
-            <View style={styles.multiPageContainer}>
+            <View style={[styles.multiPageContainer, { zIndex: 100 }]}>
               <TouchableOpacity
                 style={styles.multiPageButton}
                 onPress={handleStartMultiPage}
@@ -330,20 +370,57 @@ const CameraScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* ✅ OVERLAY DE GUÍAS - CON zIndex BAJO (DEBAJO DE LOS BOTONES) */}
+          <View style={[styles.guideOverlay, { zIndex: 10 }]}>
+            <View style={styles.guideFrame}>
+              <View style={styles.cornerTL} />
+              <View style={styles.cornerTR} />
+              <View style={styles.cornerBL} />
+              <View style={styles.cornerBR} />
+            </View>
+          </View>
+
+          {/* ✅ CONSEJOS - CON zIndex MEDIO (POR ENCIMA DE GUÍAS, DEBAJO DE BOTONES) */}
+          {showTipsOverlay && (
+            <View style={[styles.instructionsContainer, { zIndex: 50 }]}>
+              <TouchableOpacity 
+                style={styles.closeTipsButton}
+                onPress={toggleTipsOverlay}
+              >
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+              <Text style={styles.instructionsTitle}>📸 Consejos para mejor calidad:</Text>
+              <Text style={styles.instructionsText}>• Mantén el dispositivo estable</Text>
+              <Text style={styles.instructionsText}>• Buena iluminación natural</Text>
+              <Text style={styles.instructionsText}>• Encuadra toda la factura</Text>
+              <Text style={styles.instructionsText}>• Evita sombras y reflejos</Text>
+              <TouchableOpacity 
+                style={styles.moreTipsButton}
+                onPress={() => {
+                  setShowTipsOverlay(false);
+                  navigation.navigate('ImageTips');
+                }}
+              >
+                <Text style={styles.moreTipsText}>Ver más consejos →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Camera>
       ) : (
-        // ✅ MOSTRAR PLACEHOLDER MIENTRAS LA CÁMARA NO ESTÁ ENFOCADA
         <View style={styles.cameraPlaceholder}>
+          <Ionicons name="camera" size={80} color="#007AFF" />
           <Text style={styles.placeholderText}>Cargando cámara...</Text>
           <ActivityIndicator size="large" color="#007AFF" />
         </View>
       )}
       
-      <View style={styles.bottomContainer}>
+      <View style={[styles.bottomContainer, { zIndex: 100 }]}>
         <TouchableOpacity
           style={styles.signOutButton}
           onPress={handleSignOut}
         >
+          <Ionicons name="log-out" size={20} color="white" />
           <Text style={styles.signOutText}>Salir</Text>
         </TouchableOpacity>
       </View>
@@ -354,11 +431,119 @@ const CameraScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000',
   },
   camera: {
     flex: 1,
   },
-  // ✅ NUEVO ESTILO PARA PLACEHOLDER
+  // ✅ ESTILOS PARA GUÍAS - SIN pointerEvents PARA NO BLOQUEAR TOUCH
+  guideOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    pointerEvents: 'none', // ✅ IMPORTANTE: NO INTERCEPTA TOUCHES
+  },
+  guideFrame: {
+    width: '80%',
+    height: '60%',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'transparent',
+    pointerEvents: 'none', // ✅ NO INTERCEPTA TOUCHES
+  },
+  cornerTL: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    width: 20,
+    height: 20,
+    borderLeftWidth: 3,
+    borderTopWidth: 3,
+    borderColor: '#00FF00',
+    pointerEvents: 'none', // ✅ NO INTERCEPTA TOUCHES
+  },
+  cornerTR: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRightWidth: 3,
+    borderTopWidth: 3,
+    borderColor: '#00FF00',
+    pointerEvents: 'none',
+  },
+  cornerBL: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    width: 20,
+    height: 20,
+    borderLeftWidth: 3,
+    borderBottomWidth: 3,
+    borderColor: '#00FF00',
+    pointerEvents: 'none',
+  },
+  cornerBR: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+    borderColor: '#00FF00',
+    pointerEvents: 'none',
+  },
+  // ✅ CONSEJOS - CON pointerEvents: 'auto' PARA SER INTERACTIVOS
+  instructionsContainer: {
+    position: 'absolute',
+    bottom: 120,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    padding: 20,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    pointerEvents: 'auto', // ✅ PERMITE INTERACCIÓN
+  },
+  closeTipsButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+  },
+  instructionsTitle: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginBottom: 10,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  instructionsText: {
+    color: 'white',
+    fontSize: 14,
+    marginBottom: 5,
+    lineHeight: 18,
+  },
+  moreTipsButton: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'rgba(0, 122, 255, 0.3)',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  moreTipsText: {
+    color: '#007AFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
   cameraPlaceholder: {
     flex: 1,
     backgroundColor: '#000',
@@ -368,14 +553,24 @@ const styles = StyleSheet.create({
   placeholderText: {
     color: 'white',
     fontSize: 18,
-    marginBottom: 20,
+    marginVertical: 20,
   },
+  loadingText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  // ✅ ELEMENTOS INTERACTIVOS - CON pointerEvents: 'auto' (POR DEFECTO)
   header: {
     position: 'absolute',
     top: 50,
+    left: 20,
     right: 20,
-    zIndex: 1,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    pointerEvents: 'auto',
   },
   counterBadge: {
     flexDirection: 'row',
@@ -383,7 +578,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.7)',
     padding: 10,
     borderRadius: 20,
-    marginBottom: 10,
   },
   counterText: {
     color: 'white',
@@ -396,6 +590,11 @@ const styles = StyleSheet.create({
     marginLeft: 5,
     fontSize: 12,
     fontStyle: 'italic',
+  },
+  flashButton: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 10,
+    borderRadius: 20,
   },
   multiPageBadge: {
     flexDirection: 'row',
@@ -421,6 +620,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'flex-end',
     marginBottom: 30,
+    pointerEvents: 'auto',
+  },
+  tipsButton: {
+    alignSelf: 'flex-end',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 15,
+    borderRadius: 50,
   },
   flipButton: {
     alignSelf: 'flex-end',
@@ -428,10 +635,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     padding: 15,
     borderRadius: 50,
-  },
-  flipText: {
-    fontSize: 18,
-    color: 'white',
   },
   captureButton: {
     alignSelf: 'flex-end',
@@ -441,9 +644,12 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 35,
     backgroundColor: 'rgba(255,255,255,0.3)',
+    borderWidth: 3,
+    borderColor: 'white',
   },
   captureButtonDisabled: {
     backgroundColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   captureInner: {
     width: 60,
@@ -467,6 +673,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
+    pointerEvents: 'auto',
   },
   multiPageButton: {
     flexDirection: 'row',
@@ -485,9 +692,12 @@ const styles = StyleSheet.create({
   bottomContainer: {
     padding: 20,
     backgroundColor: 'rgba(0,0,0,0.8)',
+    pointerEvents: 'auto',
   },
   signOutButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255,0,0,0.7)',
     padding: 15,
     borderRadius: 8,
@@ -496,6 +706,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white',
     fontWeight: '600',
+    marginLeft: 8,
   },
   errorText: {
     fontSize: 18,
