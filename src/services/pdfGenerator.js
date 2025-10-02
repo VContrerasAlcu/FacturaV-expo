@@ -4,87 +4,43 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
 export const pdfService = {
-  // ✅ CONVERTIR IMAGEN ÚNICA A PDF
-  convertImageToPDF: async (imageUri, filename = 'factura.pdf') => {
-    try {
-      console.log(`📄 Convirtiendo imagen a PDF: ${filename}`);
-      
-      // Crear HTML simple con la imagen
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-            <style>
-              body { 
-                margin: 0; 
-                padding: 0; 
-                display: flex; 
-                justify-content: center; 
-                align-items: center;
-                min-height: 100vh;
-              }
-              img { 
-                max-width: 100%; 
-                max-height: 100vh; 
-                object-fit: contain; 
-              }
-            </style>
-          </head>
-          <body>
-            <img src="${imageUri}" />
-          </body>
-        </html>
-      `;
-
-      // Generar PDF
-      const { uri: pdfUri } = await Print.printToFileAsync({
-        html,
-        base64: false
-      });
-
-      console.log(`✅ PDF generado: ${pdfUri}`);
-      return {
-        uri: pdfUri,
-        name: filename,
-        type: 'application/pdf'
-      };
-    } catch (error) {
-      console.error('❌ Error generando PDF:', error);
-      throw error;
-    }
-  },
-
-  // ✅ CONVERTIR MÚLTIPLES IMÁGENES A UN SOLO PDF
   convertImagesToMultiPagePDF: async (images, filename = 'factura_multipagina.pdf') => {
     try {
       console.log(`📄 Convirtiendo ${images.length} imágenes a PDF multipágina: ${filename}`);
       
-      // Crear HTML con todas las imágenes (cada una en su página)
+      // MEJORAR HTML PARA MEJOR CALIDAD
       let html = `
         <!DOCTYPE html>
         <html>
           <head>
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <meta charset="UTF-8">
             <style>
               body { 
                 margin: 0; 
-                padding: 0; 
+                padding: 20px; 
+                background: white;
               }
               .page { 
                 page-break-after: always; 
                 display: flex; 
                 justify-content: center; 
-                align-items: center;
-                min-height: 100vh;
+                align-items: flex-start;
+                min-height: 95vh;
+                background: white;
               }
               .page:last-child { 
                 page-break-after: auto; 
               }
               img { 
                 max-width: 100%; 
-                max-height: 95vh; 
-                object-fit: contain; 
+                height: auto;
+                border: 1px solid #ddd;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+              }
+              @media print {
+                body { margin: 0; padding: 0; }
+                .page { min-height: 100vh; }
               }
             </style>
           </head>
@@ -96,16 +52,27 @@ export const pdfService = {
         html += `
           <div class="page">
             <img src="${image.uri}" alt="Página ${index + 1}" />
+            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+              Página ${index + 1} de ${images.length}
+            </div>
           </div>
         `;
       });
 
       html += `</body></html>`;
 
-      // Generar PDF
+      // GENERAR PDF CON MEJORES OPCIONES
       const { uri: pdfUri } = await Print.printToFileAsync({
         html,
-        base64: false
+        base64: false,
+        width: 612,   // Tamaño carta en puntos (8.5x11 pulgadas)
+        height: 792,
+        margins: {
+          top: 20,
+          bottom: 20,
+          left: 20,
+          right: 20
+        }
       });
 
       console.log(`✅ PDF multipágina generado: ${pdfUri} con ${images.length} páginas`);
@@ -118,22 +85,6 @@ export const pdfService = {
     } catch (error) {
       console.error('❌ Error generando PDF multipágina:', error);
       throw error;
-    }
-  },
-
-  // ✅ LIMPIAR ARCHIVOS TEMPORALES
-  cleanupTempFiles: async (fileUris) => {
-    try {
-      for (const uri of fileUris) {
-        try {
-          await FileSystem.deleteAsync(uri);
-          console.log(`🧹 Archivo temporal eliminado: ${uri}`);
-        } catch (error) {
-          console.warn(`⚠️ No se pudo eliminar archivo temporal: ${uri}`, error);
-        }
-      }
-    } catch (error) {
-      console.error('Error en cleanup:', error);
     }
   }
 };
