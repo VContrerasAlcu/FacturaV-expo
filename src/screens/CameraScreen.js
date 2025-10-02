@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } fr
 import { Camera } from 'expo-camera';
 import { useAuth } from '../context/AuthContext.js';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native'; // ✅ NUEVO IMPORT
 
 const CameraScreen = ({ navigation }) => {
   const [hasPermission, setHasPermission] = useState(null);
@@ -22,6 +23,9 @@ const CameraScreen = ({ navigation }) => {
     cancelMultiPageCapture
   } = useAuth();
   const [isCameraReady, setIsCameraReady] = useState(false);
+  
+  // ✅ NUEVO: Verificar si la pantalla está enfocada
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     (async () => {
@@ -30,8 +34,18 @@ const CameraScreen = ({ navigation }) => {
     })();
   }, []);
 
+  // ✅ NUEVO: Reiniciar estado de la cámara cuando la pantalla gana foco
+  useEffect(() => {
+    if (isFocused) {
+      console.log('📷 CameraScreen enfocada - reiniciando cámara');
+      setIsCameraReady(false);
+      // La cámara se reinicializará cuando se monte el componente Camera
+    }
+  }, [isFocused]);
+
   const takePicture = async () => {
-    if (cameraRef.current && isCameraReady) {
+    // ✅ VERIFICAR SI LA CÁMARA ESTÁ LISTA Y LA PANTALLA ENFOCADA
+    if (cameraRef.current && isCameraReady && isFocused) {
       try {
         setIsLoading(true);
         const photo = await cameraRef.current.takePictureAsync({
@@ -46,7 +60,6 @@ const CameraScreen = ({ navigation }) => {
             return;
           }
           
-          // ✅ USAR LA NUEVA FUNCIÓN QUE RETORNA EL ESTADO ACTUALIZADO
           const result = await addPageToMultiPageGroup(photo);
           
           if (result.success) {
@@ -90,10 +103,19 @@ const CameraScreen = ({ navigation }) => {
         }
       } catch (error) {
         console.error('Error en takePicture:', error);
-        Alert.alert('Error', 'No se pudo capturar la imagen');
+        Alert.alert('Error', 'No se pudo capturar la imagen. La cámara puede no estar lista.');
       } finally {
         setIsLoading(false);
       }
+    } else {
+      // ✅ MEJOR MENSAJE DE ERROR
+      let errorMessage = 'La cámara no está lista';
+      if (!isFocused) errorMessage = 'La pantalla de cámara no está activa';
+      if (!isCameraReady) errorMessage = 'La cámara se está inicializando';
+      if (!cameraRef.current) errorMessage = 'La cámara no está disponible';
+      
+      console.warn(`❌ No se puede capturar: ${errorMessage}`);
+      Alert.alert('Cámara no disponible', errorMessage);
     }
   };
 
@@ -106,7 +128,6 @@ const CameraScreen = ({ navigation }) => {
 
     console.log(`🎯 Finalizando factura multipágina. Esperadas: ${expectedPagesCount} páginas`);
     
-    // Completar la captura multipágina
     const result = completeMultiPageCapture();
     
     if (result.success) {
@@ -212,95 +233,111 @@ const CameraScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Camera
-        style={styles.camera}
-        type={type}
-        ref={cameraRef}
-        onCameraReady={() => setIsCameraReady(true)}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.counterBadge} onPress={handleGoToPreview}>
-            <Ionicons name="images" size={20} color="white" />
-            <Text style={styles.counterText}>{capturedImages.length}</Text>
-            {isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0 && (
-              <Text style={styles.counterSubText}>+{currentMultiPageGroup.pages.length} en progreso</Text>
-            )}
-          </TouchableOpacity>
+      {/* ✅ SOLO MOSTRAR CÁMARA SI LA PANTALLA ESTÁ ENFOCADA */}
+      {isFocused ? (
+        <Camera
+          style={styles.camera}
+          type={type}
+          ref={cameraRef}
+          onCameraReady={() => {
+            console.log('✅ Cámara lista');
+            setIsCameraReady(true);
+          }}
+          onMountError={(error) => {
+            console.error('❌ Error montando cámara:', error);
+            Alert.alert('Error', 'No se pudo inicializar la cámara');
+          }}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.counterBadge} onPress={handleGoToPreview}>
+              <Ionicons name="images" size={20} color="white" />
+              <Text style={styles.counterText}>{capturedImages.length}</Text>
+              {isMultiPageMode && currentMultiPageGroup && currentMultiPageGroup.pages && currentMultiPageGroup.pages.length > 0 && (
+                <Text style={styles.counterSubText}>+{currentMultiPageGroup.pages.length} en progreso</Text>
+              )}
+            </TouchableOpacity>
 
-          {isMultiPageMode && currentMultiPageGroup && (
-            <View style={styles.multiPageBadge}>
-              <Ionicons name="document" size={16} color="white" />
-              <Text style={styles.multiPageText}>
-                Multipágina: {currentMultiPageGroup?.pages?.length || 0} pág.
-              </Text>
-              <TouchableOpacity 
-                style={styles.cancelMultiPage}
-                onPress={() => {
-                  Alert.alert(
-                    'Cancelar captura multipágina',
-                    '¿Estás seguro de que quieres cancelar esta factura multipágina? Se perderán todas las páginas capturadas.',
-                    [
-                      { text: 'Continuar', style: 'cancel' },
-                      { 
-                        text: 'Cancelar', 
-                        style: 'destructive',
-                        onPress: cancelMultiPageCapture
-                      }
-                    ]
-                  );
-                }}
+            {isMultiPageMode && currentMultiPageGroup && (
+              <View style={styles.multiPageBadge}>
+                <Ionicons name="document" size={16} color="white" />
+                <Text style={styles.multiPageText}>
+                  Multipágina: {currentMultiPageGroup?.pages?.length || 0} pág.
+                </Text>
+                <TouchableOpacity 
+                  style={styles.cancelMultiPage}
+                  onPress={() => {
+                    Alert.alert(
+                      'Cancelar captura multipágina',
+                      '¿Estás seguro de que quieres cancelar esta factura multipágina? Se perderán todas las páginas capturadas.',
+                      [
+                        { text: 'Continuar', style: 'cancel' },
+                        { 
+                          text: 'Cancelar', 
+                          style: 'destructive',
+                          onPress: cancelMultiPageCapture
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="close" size={16} color="white" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.flipButton}
+              onPress={() => setType(
+                type === Camera.Constants.Type.back
+                  ? Camera.Constants.Type.front
+                  : Camera.Constants.Type.back
+              )}
+            >
+              <Text style={styles.flipText}>Voltear</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.captureButton, (isLoading || !isCameraReady) && styles.captureButtonDisabled]}
+              onPress={takePicture}
+              disabled={isLoading || !isCameraReady}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <View style={styles.captureInner} />
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.previewButton, (capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)) && styles.previewButtonDisabled]}
+              onPress={handleGoToPreview}
+              disabled={capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)}
+            >
+              <Ionicons name="list" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+
+          {!isMultiPageMode && (
+            <View style={styles.multiPageContainer}>
+              <TouchableOpacity
+                style={styles.multiPageButton}
+                onPress={handleStartMultiPage}
               >
-                <Ionicons name="close" size={16} color="white" />
+                <Ionicons name="documents" size={20} color="white" />
+                <Text style={styles.multiPageButtonText}>Factura Multipágina</Text>
               </TouchableOpacity>
             </View>
           )}
+        </Camera>
+      ) : (
+        // ✅ MOSTRAR PLACEHOLDER MIENTRAS LA CÁMARA NO ESTÁ ENFOCADA
+        <View style={styles.cameraPlaceholder}>
+          <Text style={styles.placeholderText}>Cargando cámara...</Text>
+          <ActivityIndicator size="large" color="#007AFF" />
         </View>
-
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.flipButton}
-            onPress={() => setType(
-              type === Camera.Constants.Type.back
-                ? Camera.Constants.Type.front
-                : Camera.Constants.Type.back
-            )}
-          >
-            <Text style={styles.flipText}>Voltear</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.captureButton, isLoading && styles.captureButtonDisabled]}
-            onPress={takePicture}
-            disabled={isLoading || !isCameraReady}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <View style={styles.captureInner} />
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.previewButton, (capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)) && styles.previewButtonDisabled]}
-            onPress={handleGoToPreview}
-            disabled={capturedImages.length === 0 && (!isMultiPageMode || !currentMultiPageGroup || !currentMultiPageGroup.pages || currentMultiPageGroup.pages.length === 0)}
-          >
-            <Ionicons name="list" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
-
-        {!isMultiPageMode && (
-          <View style={styles.multiPageContainer}>
-            <TouchableOpacity
-              style={styles.multiPageButton}
-              onPress={handleStartMultiPage}
-            >
-              <Ionicons name="documents" size={20} color="white" />
-              <Text style={styles.multiPageButtonText}>Factura Multipágina</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </Camera>
+      )}
       
       <View style={styles.bottomContainer}>
         <TouchableOpacity
@@ -314,13 +351,24 @@ const CameraScreen = ({ navigation }) => {
   );
 };
 
-// Los estilos se mantienen igual...
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   camera: {
     flex: 1,
+  },
+  // ✅ NUEVO ESTILO PARA PLACEHOLDER
+  cameraPlaceholder: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: 'white',
+    fontSize: 18,
+    marginBottom: 20,
   },
   header: {
     position: 'absolute',
