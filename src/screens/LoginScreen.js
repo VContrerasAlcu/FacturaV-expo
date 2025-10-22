@@ -1,13 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Linking, Image } from 'react-native';
 import { useAuth } from '../context/AuthContext.js';
 import { authService } from '../services/auth.js';
-import { googleAuthService } from '../services/googleAuth.js';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-
-// Configurar Google Auth
-WebBrowser.maybeCompleteAuthSession();
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -16,35 +10,42 @@ const LoginScreen = ({ navigation }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const { signIn } = useAuth();
 
-  // Configuración Google Auth
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '489825905863-vr8ttejnpo4e58u3m6oau9e2es6bp4v3.apps.googleusercontent.com', // Reemplazar con tu Client ID
-    scopes: ['profile', 'email'],
-  });
-
-  // Manejar respuesta de Google
+  // Manejar mensajes del navegador
   useEffect(() => {
-    if (response?.type === 'success') {
-      handleGoogleResponse(response.authentication.accessToken);
-    } else if (response?.type === 'error') {
-      console.error('Error Google Auth:', response.error);
-      Alert.alert('Error', 'Error en autenticación con Google');
-      setGoogleLoading(false);
-    }
-  }, [response]);
+    const handleMessage = (event) => {
+      console.log('📨 Mensaje recibido:', event.data);
+      
+      if (event.data && event.data.type) {
+        if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+          console.log('✅ Autenticación Google exitosa');
+          handleGoogleSuccess(event.data.token, event.data.user);
+        } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+          console.error('❌ Error en autenticación Google:', event.data.error);
+          Alert.alert('Error', `Error en autenticación: ${event.data.error}`);
+          setGoogleLoading(false);
+        }
+      }
+    };
 
-  const handleGoogleResponse = async (accessToken) => {
+    if (window.addEventListener) {
+      window.addEventListener('message', handleMessage);
+    }
+
+    return () => {
+      if (window.removeEventListener) {
+        window.removeEventListener('message', handleMessage);
+      }
+    };
+  }, []);
+
+  const handleGoogleSuccess = async (token, userData) => {
     try {
-      setGoogleLoading(true);
-      console.log('🔄 Procesando token Google...');
-      
-      const result = await googleAuthService.handleGoogleAuth(accessToken);
-      await signIn(result.access_token);
-      
-      console.log('✅ Usuario autenticado con Google');
+      console.log('🔄 Procesando token JWT recibido...');
+      await signIn(token);
+      Alert.alert('Éxito', `Bienvenido ${userData.nombre || userData.email}`);
     } catch (error) {
-      console.error('❌ Error autenticación Google:', error);
-      Alert.alert('Error', error.message || 'Error al iniciar sesión con Google');
+      console.error('❌ Error procesando token:', error);
+      Alert.alert('Error', 'Error al procesar la autenticación');
     } finally {
       setGoogleLoading(false);
     }
@@ -70,14 +71,38 @@ const LoginScreen = ({ navigation }) => {
   const handleGoogleAuth = async () => {
     try {
       setGoogleLoading(true);
-      console.log('🔄 Iniciando autenticación Google...');
+      console.log('🔄 Solicitando URL de Google al servidor...');
       
-      await promptAsync();
-      // La respuesta se maneja en el useEffect
+      const response = await fetch('https://facturav-servidor.onrender.com/api/auth/google/url');
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status} del servidor`);
+      }
+      
+      const data = await response.json();
+      console.log('📦 Datos recibidos:', data);
+      
+      if (data.success && data.auth_url) {
+        console.log('🔗 URL obtenida correctamente');
+        
+        const supported = await Linking.canOpenURL(data.auth_url);
+        if (supported) {
+          await Linking.openURL(data.auth_url);
+          Alert.alert(
+            'Autenticación Google', 
+            'Se abrirá el navegador para autenticarte con Google.',
+            [{ text: 'Entendido' }]
+          );
+        } else {
+          throw new Error('No se puede abrir la URL en este dispositivo');
+        }
+      } else {
+        throw new Error(data.detail || data.error || 'Error del servidor');
+      }
       
     } catch (error) {
-      console.error('❌ Error iniciando Google Auth:', error);
-      Alert.alert('Error', 'No se pudo iniciar la autenticación con Google');
+      console.error('❌ Error:', error);
+      Alert.alert('Error', error.message);
       setGoogleLoading(false);
     }
   };
@@ -128,34 +153,31 @@ const LoginScreen = ({ navigation }) => {
         <View style={styles.separatorLine} />
       </View>
 
-      {/* Botón Google */}
+      {/* Botón Google Mejorado */}
       <TouchableOpacity 
-        style={[styles.googleButton, (isLoading || googleLoading) && styles.buttonDisabled]} 
+        style={[styles.googleButton, googleLoading && styles.buttonDisabled]} 
         onPress={handleGoogleAuth}
-        disabled={!request || isLoading || googleLoading}
+        disabled={googleLoading}
       >
         {googleLoading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color="#757575" />
         ) : (
-          <>
-            <Text style={styles.googleIcon}>G</Text>
-            <Text style={styles.googleButtonText}>Iniciar sesión con Google</Text>
-          </>
+          <View style={styles.googleButtonContent}>
+            <View style={styles.googleLogoContainer}>
+              {/* Logo de Google como texto o imagen */}
+              <Text style={styles.googleLogo}>G</Text>
+            </View>
+            <Text style={styles.googleButtonText}>Continuar con Google</Text>
+          </View>
         )}
       </TouchableOpacity>
 
       <View style={styles.links}>
-        <TouchableOpacity 
-          onPress={() => navigation.navigate('Register')} 
-          disabled={isLoading || googleLoading}
-        >
+        <TouchableOpacity onPress={() => navigation.navigate('Register')} disabled={isLoading || googleLoading}>
           <Text style={styles.link}>Crear cuenta</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity 
-          onPress={handleForgotPassword} 
-          disabled={isLoading || googleLoading}
-        >
+        <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading || googleLoading}>
           <Text style={styles.link}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
       </View>
@@ -185,6 +207,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     marginBottom: 15,
     backgroundColor: '#fff',
+    fontSize: 16,
   },
   button: {
     height: 50,
@@ -193,16 +216,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   buttonDisabled: {
     backgroundColor: '#ccc',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
-  // Estilos Google
   separator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -217,26 +246,48 @@ const styles = StyleSheet.create({
     marginHorizontal: 15,
     color: '#666',
     fontSize: 14,
+    fontWeight: '500',
   },
   googleButton: {
     height: 50,
-    backgroundColor: '#DB4437',
+    backgroundColor: '#fff',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
-    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  googleIcon: {
-    color: 'white',
+  googleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleLogoContainer: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  googleLogo: {
+    width: 18,
+    height: 18,
+  },
+  googleLogoText: {
+    fontSize: 14,
     fontWeight: 'bold',
-    fontSize: 18,
-    marginRight: 10,
+    color: '#757575',
   },
   googleButtonText: {
-    color: '#fff',
+    color: '#3c4043',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   links: {
     marginTop: 20,
@@ -245,6 +296,7 @@ const styles = StyleSheet.create({
   link: {
     color: '#007AFF',
     marginBottom: 10,
+    fontSize: 16,
   },
 });
 
