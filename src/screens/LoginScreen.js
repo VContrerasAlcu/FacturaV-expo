@@ -1,54 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Linking, Image } from 'react-native';
+// src/screens/LoginScreen.js
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  StyleSheet, 
+  ActivityIndicator,
+  Image 
+} from 'react-native';
 import { useAuth } from '../context/AuthContext.js';
 import { authService } from '../services/auth.js';
+import GoogleAuthButton from '../components/GoogleAuthButton.js'; // ✅ NUEVO
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const { signIn } = useAuth();
 
-  // Manejar mensajes del navegador
-  useEffect(() => {
-    const handleMessage = (event) => {
-      console.log('📨 Mensaje recibido:', event.data);
-      
-      if (event.data && event.data.type) {
-        if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-          console.log('✅ Autenticación Google exitosa');
-          handleGoogleSuccess(event.data.token, event.data.user);
-        } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
-          console.error('❌ Error en autenticación Google:', event.data.error);
-          Alert.alert('Error', `Error en autenticación: ${event.data.error}`);
-          setGoogleLoading(false);
-        }
-      }
-    };
-
-    if (window.addEventListener) {
-      window.addEventListener('message', handleMessage);
-    }
-
-    return () => {
-      if (window.removeEventListener) {
-        window.removeEventListener('message', handleMessage);
-      }
-    };
-  }, []);
-
-  const handleGoogleSuccess = async (token, userData) => {
+  // ✅ Manejo de éxito de Google Auth
+  const handleGoogleSuccess = async (result) => {
     try {
-      console.log('🔄 Procesando token JWT recibido...');
-      await signIn(token);
-      Alert.alert('Éxito', `Bienvenido ${userData.nombre || userData.email}`);
+      await signIn(result.access_token);
+      Alert.alert('Éxito', 'Inicio de sesión con Google exitoso');
     } catch (error) {
-      console.error('❌ Error procesando token:', error);
-      Alert.alert('Error', 'Error al procesar la autenticación');
-    } finally {
-      setGoogleLoading(false);
+      console.error('❌ Error en signIn después de Google:', error);
+      Alert.alert('Error', 'Error al iniciar sesión');
     }
+  };
+
+  // ✅ Manejo de errores de Google Auth
+  const handleGoogleError = (errorMessage) => {
+    Alert.alert('Error', errorMessage);
   };
 
   const handleLogin = async () => {
@@ -61,49 +46,12 @@ const LoginScreen = ({ navigation }) => {
     try {
       const response = await authService.login(email, password);
       await signIn(response.access_token);
+      console.log('✅ Login exitoso con email/password');
     } catch (error) {
+      console.error('❌ Error en login:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Error al iniciar sesión');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    try {
-      setGoogleLoading(true);
-      console.log('🔄 Solicitando URL de Google al servidor...');
-      
-      const response = await fetch('https://facturav-servidor.onrender.com/api/auth/google/url');
-      
-      if (!response.ok) {
-        throw new Error(`Error ${response.status} del servidor`);
-      }
-      
-      const data = await response.json();
-      console.log('📦 Datos recibidos:', data);
-      
-      if (data.success && data.auth_url) {
-        console.log('🔗 URL obtenida correctamente');
-        
-        const supported = await Linking.canOpenURL(data.auth_url);
-        if (supported) {
-          await Linking.openURL(data.auth_url);
-          Alert.alert(
-            'Autenticación Google', 
-            'Se abrirá el navegador para autenticarte con Google.',
-            [{ text: 'Entendido' }]
-          );
-        } else {
-          throw new Error('No se puede abrir la URL en este dispositivo');
-        }
-      } else {
-        throw new Error(data.detail || data.error || 'Error del servidor');
-      }
-      
-    } catch (error) {
-      console.error('❌ Error:', error);
-      Alert.alert('Error', error.message);
-      setGoogleLoading(false);
     }
   };
 
@@ -113,8 +61,16 @@ const LoginScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>FacturaV</Text>
       
+      {/* LOGO */}
+      <View style={styles.logoContainer}>
+        <Image 
+          source={require('../../assets/logo.png')} 
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </View>
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -122,7 +78,7 @@ const LoginScreen = ({ navigation }) => {
         onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
-        editable={!isLoading && !googleLoading}
+        editable={!isLoading}
       />
       
       <TextInput
@@ -131,13 +87,13 @@ const LoginScreen = ({ navigation }) => {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        editable={!isLoading && !googleLoading}
+        editable={!isLoading}
       />
       
       <TouchableOpacity 
-        style={[styles.button, (isLoading || googleLoading) && styles.buttonDisabled]} 
+        style={[styles.button, isLoading && styles.buttonDisabled]} 
         onPress={handleLogin}
-        disabled={isLoading || googleLoading}
+        disabled={isLoading}
       >
         {isLoading ? (
           <ActivityIndicator color="#fff" />
@@ -153,31 +109,25 @@ const LoginScreen = ({ navigation }) => {
         <View style={styles.separatorLine} />
       </View>
 
-      {/* Botón Google Mejorado */}
-      <TouchableOpacity 
-        style={[styles.googleButton, googleLoading && styles.buttonDisabled]} 
-        onPress={handleGoogleAuth}
-        disabled={googleLoading}
-      >
-        {googleLoading ? (
-          <ActivityIndicator color="#757575" />
-        ) : (
-          <View style={styles.googleButtonContent}>
-            <View style={styles.googleLogoContainer}>
-              {/* Logo de Google como texto o imagen */}
-              <Text style={styles.googleLogo}>G</Text>
-            </View>
-            <Text style={styles.googleButtonText}>Continuar con Google</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+      {/* ✅ NUEVO: Botón Google Auth como componente separado */}
+      <GoogleAuthButton
+        onSuccess={handleGoogleSuccess}
+        onError={handleGoogleError}
+        disabled={isLoading}
+      />
 
       <View style={styles.links}>
-        <TouchableOpacity onPress={() => navigation.navigate('Register')} disabled={isLoading || googleLoading}>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('Register')} 
+          disabled={isLoading}
+        >
           <Text style={styles.link}>Crear cuenta</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading || googleLoading}>
+        <TouchableOpacity 
+          onPress={handleForgotPassword} 
+          disabled={isLoading}
+        >
           <Text style={styles.link}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
       </View>
@@ -185,6 +135,7 @@ const LoginScreen = ({ navigation }) => {
   );
 };
 
+// ... (estilos iguales, agregar el separador)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -192,12 +143,13 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f5f5f5',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  logoContainer: {
+    alignItems: 'center',
     marginBottom: 40,
-    color: '#333',
+  },
+  logo: {
+    width: 200,
+    height: 120,
   },
   input: {
     height: 50,
@@ -246,47 +198,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 15,
     color: '#666',
     fontSize: 14,
-    fontWeight: '500',
-  },
-  googleButton: {
-    height: 50,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#dadce0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  googleButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleLogoContainer: {
-    width: 20,
-    height: 20,
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  googleLogo: {
-    width: 18,
-    height: 18,
-  },
-  googleLogoText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#757575',
-  },
-  googleButtonText: {
-    color: '#3c4043',
-    fontSize: 16,
     fontWeight: '500',
   },
   links: {
