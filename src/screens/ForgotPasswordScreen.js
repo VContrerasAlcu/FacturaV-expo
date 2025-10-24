@@ -1,4 +1,4 @@
-// src/screens/ForgotPasswordScreen.js
+// src/screens/ForgotPasswordScreen.js - MEJORAR MANEJO DE ERRORES
 import React, { useState } from 'react';
 import { 
   View, 
@@ -26,13 +26,21 @@ const ForgotPasswordScreen = ({ navigation }) => {
       return;
     }
 
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Por favor, ingresa un email válido');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await authService.forgotPassword(email);
+      const result = await authService.forgotPassword(email);
       setStep(2);
-      Alert.alert('Éxito', 'Código de verificación enviado a tu email');
+      Alert.alert('Éxito', result.message || 'Código de verificación enviado a tu email');
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.detail || 'Error enviando código');
+      console.error('Error enviando código:', error);
+      Alert.alert('Error', error.message || 'Error enviando código de verificación');
     } finally {
       setIsLoading(false);
     }
@@ -61,7 +69,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
         { text: 'OK', onPress: () => navigation.navigate('Login') }
       ]);
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.detail || 'Error actualizando contraseña');
+      console.error('Error actualizando contraseña:', error);
+      Alert.alert('Error', error.message || 'Error actualizando contraseña');
     } finally {
       setIsLoading(false);
     }
@@ -102,21 +111,22 @@ const ForgotPasswordScreen = ({ navigation }) => {
       ) : (
         <>
           <Text style={styles.description}>
-            Ingresa el código que recibiste y tu nueva contraseña
+            Ingresa el código que recibiste en {email} y tu nueva contraseña
           </Text>
           
           <TextInput
             style={styles.input}
-            placeholder="Código de verificación"
+            placeholder="Código de verificación (6 dígitos)"
             value={code}
             onChangeText={setCode}
             keyboardType="number-pad"
             editable={!isLoading}
+            maxLength={6}
           />
           
           <TextInput
             style={styles.input}
-            placeholder="Nueva contraseña"
+            placeholder="Nueva contraseña (mínimo 6 caracteres)"
             value={newPassword}
             onChangeText={setNewPassword}
             secureTextEntry
@@ -156,6 +166,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
     </ScrollView>
   );
 };
+
+// ... (estilos iguales)
 
 const styles = StyleSheet.create({
   container: {

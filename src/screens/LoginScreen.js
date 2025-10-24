@@ -1,4 +1,4 @@
-// src/screens/LoginScreen.js
+// src/screens/LoginScreen.js - Versión corregida
 import React, { useState } from 'react';
 import { 
   View, 
@@ -27,19 +27,22 @@ const LoginScreen = ({ navigation }) => {
 
     setIsLoading(true);
     try {
+      console.log('🔄 Intentando login...');
       const response = await authService.login(email, password);
+      console.log('✅ Login exitoso, firmando token...');
       await signIn(response.access_token);
-      console.log('✅ Login exitoso');
     } catch (error) {
       console.error('❌ Error en login:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Error al iniciar sesión');
+      const errorMessage = error.response?.data?.detail || 
+                          error.message || 
+                          'Error al iniciar sesión';
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleForgotPassword = () => {
-    // Navegar a la nueva pantalla de recuperación
     navigation.navigate('ForgotPassword');
   };
 
@@ -105,7 +108,6 @@ const LoginScreen = ({ navigation }) => {
   );
 };
 
-// Estilos (eliminar los relacionados con Google)
 const styles = StyleSheet.create({
   container: {
     flex: 1,

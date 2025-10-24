@@ -1,6 +1,6 @@
-// App.js - VERSIÓN COMPLETA MODIFICADA (sin Google Auth, con recuperación de contraseña)
+// App.js - VERSIÓN COMPLETA CORREGIDA
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,7 @@ import ImageTipsScreen from './src/screens/ImageTipsScreen.js';
 // Importar pantallas
 import LoginScreen from './src/screens/LoginScreen.js';
 import RegisterScreen from './src/screens/RegisterScreen.js';
-import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen.js'; // ✅ NUEVO
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen.js';
 import CameraScreen from './src/screens/CameraScreen.js';
 import PreviewScreen from './src/screens/PreviewScreen.js';
 
@@ -39,48 +39,31 @@ function AppContent() {
         }}
       >
         {isAuthenticated ? (
-          // ✅ USUARIO AUTENTICADO - Pantallas principales de la app
+          // USUARIO AUTENTICADO - Pantallas principales de la app
           <>
             <Stack.Screen 
               name="Camera" 
               component={CameraScreen}
-              options={{
-                animation: 'fade'
-              }}
             />
             <Stack.Screen 
               name="Preview" 
               component={PreviewScreen}
-              options={{
-                presentation: 'card',
-                animation: 'slide_from_bottom'
-              }}
             />
             <Stack.Screen 
               name="ImageTips" 
               component={ImageTipsScreen}
-              options={{
-                presentation: 'modal',
-                animation: 'slide_from_bottom'
-              }}
             />
           </>
         ) : (
-          // ✅ USUARIO NO AUTENTICADO - Pantallas de autenticación
+          // USUARIO NO AUTENTICADO - Pantallas de autenticación
           <>
             <Stack.Screen 
               name="Login" 
               component={LoginScreen}
-              options={{
-                animation: 'fade'
-              }}
             />
             <Stack.Screen 
               name="Register" 
               component={RegisterScreen}
-              options={{
-                animation: 'slide_from_right'
-              }}
             />
             <Stack.Screen 
               name="ForgotPassword" 
@@ -95,7 +78,6 @@ function AppContent() {
                 headerTitleStyle: {
                   fontWeight: 'bold',
                 },
-                animation: 'slide_from_right'
               }}
             />
           </>
