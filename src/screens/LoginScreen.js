@@ -12,29 +12,12 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext.js';
 import { authService } from '../services/auth.js';
-import GoogleAuthButton from '../components/GoogleAuthButton.js'; // ✅ NUEVO
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { signIn } = useAuth();
-
-  // ✅ Manejo de éxito de Google Auth
-  const handleGoogleSuccess = async (result) => {
-    try {
-      await signIn(result.access_token);
-      Alert.alert('Éxito', 'Inicio de sesión con Google exitoso');
-    } catch (error) {
-      console.error('❌ Error en signIn después de Google:', error);
-      Alert.alert('Error', 'Error al iniciar sesión');
-    }
-  };
-
-  // ✅ Manejo de errores de Google Auth
-  const handleGoogleError = (errorMessage) => {
-    Alert.alert('Error', errorMessage);
-  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -46,7 +29,7 @@ const LoginScreen = ({ navigation }) => {
     try {
       const response = await authService.login(email, password);
       await signIn(response.access_token);
-      console.log('✅ Login exitoso con email/password');
+      console.log('✅ Login exitoso');
     } catch (error) {
       console.error('❌ Error en login:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Error al iniciar sesión');
@@ -56,7 +39,8 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert('Recuperar Contraseña', 'Funcionalidad pronto disponible');
+    // Navegar a la nueva pantalla de recuperación
+    navigation.navigate('ForgotPassword');
   };
 
   return (
@@ -102,20 +86,6 @@ const LoginScreen = ({ navigation }) => {
         )}
       </TouchableOpacity>
 
-      {/* Separador */}
-      <View style={styles.separator}>
-        <View style={styles.separatorLine} />
-        <Text style={styles.separatorText}>o</Text>
-        <View style={styles.separatorLine} />
-      </View>
-
-      {/* ✅ NUEVO: Botón Google Auth como componente separado */}
-      <GoogleAuthButton
-        onSuccess={handleGoogleSuccess}
-        onError={handleGoogleError}
-        disabled={isLoading}
-      />
-
       <View style={styles.links}>
         <TouchableOpacity 
           onPress={() => navigation.navigate('Register')} 
@@ -135,7 +105,7 @@ const LoginScreen = ({ navigation }) => {
   );
 };
 
-// ... (estilos iguales, agregar el separador)
+// Estilos (eliminar los relacionados con Google)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -168,37 +138,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   buttonDisabled: {
     backgroundColor: '#ccc',
-    shadowOpacity: 0,
-    elevation: 0,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  separator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  separatorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#ddd',
-  },
-  separatorText: {
-    marginHorizontal: 15,
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
   },
   links: {
     marginTop: 20,

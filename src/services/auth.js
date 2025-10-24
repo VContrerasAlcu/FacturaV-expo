@@ -1,3 +1,4 @@
+// src/services/auth.js
 import api from './api.js';
 
 export const authService = {
@@ -24,6 +25,7 @@ export const authService = {
     return response.data;
   },
 
+  // ✅ NUEVO: Recuperación de contraseña
   forgotPassword: async (email) => {
     const response = await api.post('/api/forgot-password', { email });
     return response.data;
