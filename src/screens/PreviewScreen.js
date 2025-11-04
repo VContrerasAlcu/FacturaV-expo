@@ -151,10 +151,15 @@ const PreviewScreen = ({ navigation }) => {
     setIsLoading(true);
     
     try {
-      // ✅ OBTENER FormData CON AGRUPACIÓN MULTIPÁGINA
-      const formData = await prepareFormData();
+      console.log('🔄 Comprimiendo imágenes antes de enviar...');
       
-      console.log('📤 Enviando imágenes al servidor (multipágina agrupada)...');
+      // ✅ COMPRIMIR IMÁGENES EN EL CLIENTE ANTES DE ENVIAR
+      const compressedImages = await compressAllImages(capturedImages);
+      
+      console.log('📤 Preparando FormData con imágenes comprimidas...');
+      const formData = await prepareFormData(compressedImages); // Pasar imágenes comprimidas
+      
+      console.log('📤 Enviando imágenes comprimidas al servidor...');
       
       const response = await invoiceService.uploadInvoices(formData);
       console.log('✅ Respuesta del servidor:', response);

@@ -44,19 +44,25 @@ const CameraScreen = ({ navigation }) => {
     }
   }, [isFocused]);
 
+  // En CameraScreen.js - MODIFICAR la función takePicture
+
   const takePicture = async () => {
     if (cameraRef.current && isCameraReady && isFocused) {
       try {
         setIsLoading(true);
         
+        // ✅ CAPTURA CON CALIDAD REDUCIDA
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.9,
+          quality: 0.6, // ✅ REDUCIDO de 0.9 a 0.6 (33% menos calidad)
           base64: false,
-          skipProcessing: false,
+          skipProcessing: false, // Mantener procesamiento básico
           exif: true,
+          // ✅ AGREGAR: Configuración específica para reducir tamaño
+          // width: 1024,  // Opcional: limitar ancho máximo
+          // height: 1024, // Opcional: limitar alto máximo
         });
         
-        console.log('📸 Foto capturada con calidad mejorada');
+        console.log('📸 Foto capturada con calidad optimizada');
         
         if (isMultiPageMode) {
           if (!currentMultiPageGroup) {
