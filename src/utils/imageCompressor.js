@@ -1,6 +1,9 @@
-// src/utils/imageCompressor.js - NUEVO ARCHIVO
+// src/utils/imageCompressor.js - CREAR ESTE ARCHIVO
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
+/**
+ * Comprime una imagen individual para reducir su tamaño
+ */
 export const compressImageForUpload = async (imageUri, maxSizeKB = 300) => {
   try {
     console.log(`🔄 Comprimiendo imagen: ${imageUri}`);
@@ -52,6 +55,9 @@ export const compressImageForUpload = async (imageUri, maxSizeKB = 300) => {
   }
 };
 
+/**
+ * Comprime todas las imágenes de un array
+ */
 export const compressAllImages = async (images) => {
   console.log(`🔄 Comprimiendo ${images.length} imágenes...`);
   
@@ -61,14 +67,27 @@ export const compressAllImages = async (images) => {
     const image = images[i];
     console.log(`📸 Comprimiendo imagen ${i + 1}/${images.length}`);
     
-    const compressedUri = await compressImageForUpload(image.uri);
-    compressedImages.push({
-      ...image,
-      uri: compressedUri,
-      compressed: true
-    });
+    try {
+      const compressedUri = await compressImageForUpload(image.uri);
+      compressedImages.push({
+        ...image,
+        uri: compressedUri,
+        compressed: true
+      });
+    } catch (error) {
+      console.error(`❌ Error comprimiendo imagen ${i + 1}:`, error);
+      // Si falla la compresión, mantener la imagen original
+      compressedImages.push(image);
+    }
   }
   
   console.log(`✅ Todas las imágenes comprimidas`);
   return compressedImages;
+};
+
+/**
+ * Comprimir una sola imagen (para uso individual)
+ */
+export const compressSingleImage = async (imageUri) => {
+  return await compressImageForUpload(imageUri);
 };

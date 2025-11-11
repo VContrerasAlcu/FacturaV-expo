@@ -1,4 +1,4 @@
-// src/screens/PreviewScreen.js
+// src/screens/PreviewScreen.js - VERSIÓN COMPLETA MODIFICADA
 import React, { useState } from 'react';
 import { 
   View, 
@@ -19,7 +19,86 @@ import * as FileSystem from 'expo-file-system';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// Función de compresión de imágenes
+// ✅ FUNCIONES DE COMPRESIÓN INTEGRADAS
+const compressImageForUpload = async (imageUri, maxSizeKB = 300) => {
+  try {
+    console.log(`🔄 Comprimiendo imagen: ${imageUri}`);
+    
+    // Primera compresión: reducir calidad
+    const compressedImage = await manipulateAsync(
+      imageUri,
+      [],
+      { 
+        compress: 0.6, // ✅ 60% de calidad
+        format: SaveFormat.JPEG 
+      }
+    );
+    
+    // Verificar tamaño
+    const response = await fetch(compressedImage.uri);
+    const blob = await response.blob();
+    const sizeKB = blob.size / 1024;
+    
+    console.log(`📊 Tamaño después de compresión 1: ${sizeKB.toFixed(1)}KB`);
+    
+    // Si todavía es muy grande, aplicar compresión más agresiva
+    if (sizeKB > maxSizeKB) {
+      console.log('🔁 Aplicando compresión adicional...');
+      
+      const furtherCompressed = await manipulateAsync(
+        compressedImage.uri,
+        [{ resize: { width: 1024 } }], // ✅ Reducir dimensiones
+        { 
+          compress: 0.5, // ✅ 50% de calidad
+          format: SaveFormat.JPEG 
+        }
+      );
+      
+      const response2 = await fetch(furtherCompressed.uri);
+      const blob2 = await response2.blob();
+      const finalSizeKB = blob2.size / 1024;
+      
+      console.log(`✅ Compresión final: ${finalSizeKB.toFixed(1)}KB`);
+      return furtherCompressed.uri;
+    }
+    
+    console.log(`✅ Compresión suficiente: ${sizeKB.toFixed(1)}KB`);
+    return compressedImage.uri;
+    
+  } catch (error) {
+    console.error('❌ Error comprimiendo imagen:', error);
+    return imageUri; // Devolver original en caso de error
+  }
+};
+
+const compressAllImages = async (images) => {
+  console.log(`🔄 Comprimiendo ${images.length} imágenes...`);
+  
+  const compressedImages = [];
+  
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    console.log(`📸 Comprimiendo imagen ${i + 1}/${images.length}`);
+    
+    try {
+      const compressedUri = await compressImageForUpload(image.uri);
+      compressedImages.push({
+        ...image,
+        uri: compressedUri,
+        compressed: true
+      });
+    } catch (error) {
+      console.error(`❌ Error comprimiendo imagen ${i + 1}:`, error);
+      // Si falla la compresión, mantener la imagen original
+      compressedImages.push(image);
+    }
+  }
+  
+  console.log(`✅ Todas las imágenes comprimidas`);
+  return compressedImages;
+};
+
+// Función de compresión de imágenes existente (mantener para compatibilidad)
 const compressImage = async (imageUri, maxSizeMB = 3) => {
   try {
     const imageInfo = await FileSystem.getInfoAsync(imageUri);
@@ -60,19 +139,20 @@ const PreviewScreen = ({ navigation }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // ✅ FUNCIÓN CORREGIDA: Mantener agrupación multipágina
-  const prepareFormData = async () => {
+  const prepareFormData = async (imagesToProcess = capturedImages) => {
     const formData = new FormData();
     
-    console.log(`📦 Preparando ${capturedImages.length} elementos para envío`);
+    console.log(`📦 Preparando ${imagesToProcess.length} elementos para envío`);
 
     try {
-      for (let i = 0; i < capturedImages.length; i++) {
-        const image = capturedImages[i];
+      for (let i = 0; i < imagesToProcess.length; i++) {
+        const image = imagesToProcess[i];
         
         console.log(`📄 Procesando elemento ${i + 1}:`, {
           isMultiPage: image.isMultiPage,
           pagesCount: image.pages ? image.pages.length : 0,
-          groupId: image.groupId
+          groupId: image.groupId,
+          compressed: image.compressed || false
         });
 
         if (image.isMultiPage && image.pages) {
@@ -90,7 +170,7 @@ const PreviewScreen = ({ navigation }) => {
           for (let j = 0; j < image.pages.length; j++) {
             const page = image.pages[j];
             
-            // Comprimir imagen si es necesario
+            // Comprimir imagen si es necesario (usar compresión existente para compatibilidad)
             const compressedUri = await compressImage(page.uri);
             
             // Obtener información del archivo
@@ -114,17 +194,17 @@ const PreviewScreen = ({ navigation }) => {
           // ✅ FACTURA SIMPLE: Enviar individualmente
           console.log(`🔄 Enviando factura simple`);
           
-          // Comprimir imagen si es necesario
-          const compressedUri = await compressImage(image.uri);
+          // Usar la URI ya comprimida si está disponible
+          const imageUri = image.compressed ? image.uri : await compressImage(image.uri);
           
           // Obtener información del archivo
-          const fileInfo = await FileSystem.getInfoAsync(compressedUri);
-          const extension = compressedUri.split('.').pop()?.toLowerCase() || 'jpg';
+          const fileInfo = await FileSystem.getInfoAsync(imageUri);
+          const extension = imageUri.split('.').pop()?.toLowerCase() || 'jpg';
           const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
           
           // ✅ AGREGAR FACTURA SIMPLE
           formData.append('files', {
-            uri: compressedUri,
+            uri: imageUri,
             type: mimeType,
             name: `single_factura_${i + 1}.${extension}`
           });
@@ -157,7 +237,7 @@ const PreviewScreen = ({ navigation }) => {
       const compressedImages = await compressAllImages(capturedImages);
       
       console.log('📤 Preparando FormData con imágenes comprimidas...');
-      const formData = await prepareFormData(compressedImages); // Pasar imágenes comprimidas
+      const formData = await prepareFormData(compressedImages);
       
       console.log('📤 Enviando imágenes comprimidas al servidor...');
       
@@ -185,7 +265,6 @@ const PreviewScreen = ({ navigation }) => {
     }
   };
 
-  // ... (el resto del código permanece igual)
   const handleRemoveImage = (imageId) => {
     Alert.alert(
       'Eliminar imagen',
@@ -385,7 +464,6 @@ const PreviewScreen = ({ navigation }) => {
   );
 };
 
-// ... (los estilos permanecen igual)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
