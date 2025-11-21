@@ -1,10 +1,73 @@
-// src/screens/CameraScreen.js
+// src/screens/CameraScreen.js - VERSIÓN COMPLETA CON RECORTE
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Dimensions } from 'react-native';
 import { Camera } from 'expo-camera';
 import { useAuth } from '../context/AuthContext.js';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// ✅ NUEVO: Función para calcular área de recorte
+const calculateCropArea = (photo) => {
+  // Dimensiones de la imagen capturada
+  const imageWidth = photo.width;
+  const imageHeight = photo.height;
+  
+  // Dimensiones y posición del recuadro verde (en porcentajes de la pantalla)
+  const guideWidth = 0.85;  // 85% del ancho
+  const guideHeight = 0.65; // 65% del alto
+  const guideX = (1 - guideWidth) / 2;  // Centrado horizontal (7.5% margen cada lado)
+  const guideY = (1 - guideHeight) / 2; // Centrado vertical (17.5% margen cada lado)
+  
+  // Convertir coordenadas relativas a píxeles absolutos en la imagen
+  const cropX = guideX * imageWidth;
+  const cropY = guideY * imageHeight;
+  const cropWidth = guideWidth * imageWidth;
+  const cropHeight = guideHeight * imageHeight;
+  
+  console.log(`📐 Área de recorte calculada:`, {
+    imageSize: `${imageWidth}x${imageHeight}`,
+    cropArea: `${Math.round(cropX)},${Math.round(cropY)} ${Math.round(cropWidth)}x${Math.round(cropHeight)}`,
+    screenSize: `${screenWidth}x${screenHeight}`
+  });
+  
+  return {
+    x: Math.round(cropX),
+    y: Math.round(cropY),
+    width: Math.round(cropWidth),
+    height: Math.round(cropHeight)
+  };
+};
+
+// ✅ NUEVO: Función para recortar la imagen
+const cropImage = async (photoUri, cropArea) => {
+  try {
+    const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
+    
+    console.log('✂️ Recortando imagen...');
+    
+    const croppedImage = await manipulateAsync(
+      photoUri,
+      [{
+        crop: {
+          originX: cropArea.x,
+          originY: cropArea.y,
+          width: cropArea.width,
+          height: cropArea.height
+        }
+      }],
+      { compress: 0.8, format: SaveFormat.JPEG }
+    );
+    
+    console.log('✅ Imagen recortada exitosamente');
+    return croppedImage;
+    
+  } catch (error) {
+    console.error('❌ Error recortando imagen:', error);
+    throw error;
+  }
+};
 
 const CameraScreen = ({ navigation }) => {
   const [hasPermission, setHasPermission] = useState(null);
@@ -13,6 +76,7 @@ const CameraScreen = ({ navigation }) => {
   const [flashMode, setFlashMode] = useState(Camera.Constants.FlashMode.off);
   const [cameraRatio, setCameraRatio] = useState('16:9');
   const [showTipsOverlay, setShowTipsOverlay] = useState(false);
+  const [edgeDetectionEnabled, setEdgeDetectionEnabled] = useState(true);
   const cameraRef = useRef(null);
   const { 
     signOut, 
@@ -44,25 +108,54 @@ const CameraScreen = ({ navigation }) => {
     }
   }, [isFocused]);
 
-  // En CameraScreen.js - MODIFICAR la función takePicture
+  // ✅ NUEVO: Configurar cámara para mejor captura de documentos
+  const setupCameraForDocuments = async () => {
+    if (cameraRef.current) {
+      try {
+        // Configurar enfoque automático continuo
+        await cameraRef.current.setFocusMode(Camera.Constants.FocusMode.continuous);
+        
+        // Configurar exposición automática
+        await cameraRef.current.setExposureMode(Camera.Constants.ExposureMode.continuous);
+        
+        // Configurar balance de blancos automático
+        await cameraRef.current.setWhiteBalanceMode(Camera.Constants.WhiteBalance.auto);
+        
+        console.log('✅ Cámara configurada para documentos');
+      } catch (error) {
+        console.log('⚠️ No se pudieron configurar todas las opciones de cámara');
+      }
+    }
+  };
 
+  // ✅ MODIFICADA: Función takePicture con recorte
   const takePicture = async () => {
     if (cameraRef.current && isCameraReady && isFocused) {
       try {
         setIsLoading(true);
         
-        // ✅ CAPTURA CON CALIDAD REDUCIDA
+        console.log('📸 Capturando imagen...');
+        
+        // Capturar imagen con máxima calidad para mejor recorte
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.6, // ✅ REDUCIDO de 0.9 a 0.6 (33% menos calidad)
+          quality: 1, // ✅ MÁXIMA CALIDAD para mejor recorte
           base64: false,
-          skipProcessing: false, // Mantener procesamiento básico
+          skipProcessing: true, // ✅ DESHABILITAR procesamiento para recorte preciso
           exif: true,
-          // ✅ AGREGAR: Configuración específica para reducir tamaño
-          // width: 1024,  // Opcional: limitar ancho máximo
-          // height: 1024, // Opcional: limitar alto máximo
+          scale: 1,
+          imageType: 'jpg',
+          isImageMirror: false
         });
         
-        console.log('📸 Foto capturada con calidad optimizada');
+        console.log('✅ Imagen capturada, procediendo a recortar...');
+        
+        // ✅ CALCULAR ÁREA DE RECORTE
+        const cropArea = calculateCropArea(photo);
+        
+        // ✅ RECORTAR IMAGEN
+        const croppedPhoto = await cropImage(photo.uri, cropArea);
+        
+        console.log('🎯 Imagen recortada - Solo área dentro del recuadro');
         
         if (isMultiPageMode) {
           if (!currentMultiPageGroup) {
@@ -70,7 +163,7 @@ const CameraScreen = ({ navigation }) => {
             return;
           }
           
-          const result = await addPageToMultiPageGroup(photo);
+          const result = await addPageToMultiPageGroup(croppedPhoto);
           
           if (result.success) {
             console.log(`📄 Página ${result.pagesCount} agregada correctamente`);
@@ -96,7 +189,7 @@ const CameraScreen = ({ navigation }) => {
             Alert.alert('Error', 'No se pudo agregar la página a la factura multipágina');
           }
         } else {
-          addCapturedImage(photo);
+          addCapturedImage(croppedPhoto);
           Alert.alert(
             'Imagen capturada',
             `Tienes ${capturedImages.length + 1} imagen(es) lista(s) para enviar.`,
@@ -112,7 +205,25 @@ const CameraScreen = ({ navigation }) => {
         }
       } catch (error) {
         console.error('Error en takePicture:', error);
-        Alert.alert('Error', 'No se pudo capturar la imagen. La cámara puede no estar lista.');
+        
+        // ✅ FALLBACK: Si falla el recorte, usar imagen original con alerta
+        Alert.alert(
+          'Aviso', 
+          'No se pudo recortar la imagen. Se usará la imagen completa.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Usar imagen original sin recortar
+                if (isMultiPageMode && currentMultiPageGroup) {
+                  addPageToMultiPageGroup(photo);
+                } else {
+                  addCapturedImage(photo);
+                }
+              }
+            }
+          ]
+        );
       } finally {
         setIsLoading(false);
       }
@@ -137,6 +248,15 @@ const CameraScreen = ({ navigation }) => {
 
   const toggleTipsOverlay = () => {
     setShowTipsOverlay(!showTipsOverlay);
+  };
+
+  // ✅ NUEVO: Toggle detección de bordes
+  const toggleEdgeDetection = () => {
+    setEdgeDetectionEnabled(!edgeDetectionEnabled);
+    Alert.alert(
+      'Detección de bordes',
+      edgeDetectionEnabled ? 'Desactivada' : 'Activada - La guía te ayudará a encuadrar mejor'
+    );
   };
 
   const handleCompleteMultiPage = (expectedPagesCount) => {
@@ -260,19 +380,18 @@ const CameraScreen = ({ navigation }) => {
           onCameraReady={() => {
             console.log('✅ Cámara lista y configurada');
             setIsCameraReady(true);
+            setupCameraForDocuments(); // ✅ CONFIGURAR PARA DOCUMENTOS
           }}
-          autoFocus={Camera.Constants.AutoFocus.on}
+          autoFocus={Camera.Constants.AutoFocus.on} // ✅ ENFOQUE AUTOMÁTICO
           flashMode={flashMode}
-          whiteBalance={Camera.Constants.WhiteBalance.auto}
+          whiteBalance={Camera.Constants.WhiteBalance.auto} // ✅ BALANCE AUTOMÁTICO
           ratio={cameraRatio}
           onMountError={(error) => {
             console.error('❌ Error montando cámara:', error);
             Alert.alert('Error', 'No se pudo inicializar la cámara');
           }}
         >
-          {/* ✅ ELEMENTOS INTERACTIVOS CON zIndex ALTO (POR ENCIMA DEL OVERLAY) */}
-          
-          {/* HEADER - POR ENCIMA DE TODO */}
+          {/* HEADER */}
           <View style={[styles.header, { zIndex: 100 }]}>
             <TouchableOpacity style={styles.counterBadge} onPress={handleGoToPreview}>
               <Ionicons name="images" size={20} color="white" />
@@ -286,6 +405,18 @@ const CameraScreen = ({ navigation }) => {
               <Ionicons 
                 name={flashMode === Camera.Constants.FlashMode.on ? "flash" : "flash-off"} 
                 size={24} 
+                color="white" 
+              />
+            </TouchableOpacity>
+
+            {/* ✅ NUEVO: Botón detección de bordes */}
+            <TouchableOpacity 
+              style={[styles.edgeDetectionButton, edgeDetectionEnabled && styles.edgeDetectionActive]} 
+              onPress={toggleEdgeDetection}
+            >
+              <Ionicons 
+                name={edgeDetectionEnabled ? "scan" : "scan-outline"} 
+                size={22} 
                 color="white" 
               />
             </TouchableOpacity>
@@ -319,7 +450,7 @@ const CameraScreen = ({ navigation }) => {
             )}
           </View>
 
-          {/* BOTONES PRINCIPALES - POR ENCIMA DE TODO */}
+          {/* BOTONES PRINCIPALES */}
           <View style={[styles.buttonContainer, { zIndex: 100 }]}>
             <TouchableOpacity
               style={styles.tipsButton}
@@ -337,7 +468,7 @@ const CameraScreen = ({ navigation }) => {
               onPress={() => setType(
                 type === Camera.Constants.Type.back
                   ? Camera.Constants.Type.front
-                  : Camera.Constants.Type.back
+                  : Camera.Constants.Type.front
               )}
             >
               <Ionicons name="camera-reverse" size={24} color="white" />
@@ -364,7 +495,7 @@ const CameraScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* BOTÓN MULTIPÁGINA - POR ENCIMA DE TODO */}
+          {/* BOTÓN MULTIPÁGINA */}
           {!isMultiPageMode && (
             <View style={[styles.multiPageContainer, { zIndex: 100 }]}>
               <TouchableOpacity
@@ -377,17 +508,36 @@ const CameraScreen = ({ navigation }) => {
             </View>
           )}
 
-          {/* ✅ OVERLAY DE GUÍAS - CON zIndex BAJO (DEBAJO DE LOS BOTONES) */}
+          {/* ✅ MEJORADO: OVERLAY DE GUÍAS INTELIGENTES */}
           <View style={[styles.guideOverlay, { zIndex: 10 }]}>
-            <View style={styles.guideFrame}>
+            <View style={[
+              styles.guideFrame, 
+              edgeDetectionEnabled && styles.guideFrameEnhanced
+            ]}>
               <View style={styles.cornerTL} />
               <View style={styles.cornerTR} />
               <View style={styles.cornerBL} />
               <View style={styles.cornerBR} />
+              
+              {/* ✅ NUEVO: Líneas de guía para centrado */}
+              {edgeDetectionEnabled && (
+                <>
+                  <View style={styles.guideLineVertical} />
+                  <View style={styles.guideLineHorizontal} />
+                </>
+              )}
             </View>
+            
+            {/* ✅ NUEVO: Indicador de posición óptima */}
+            {edgeDetectionEnabled && (
+              <View style={styles.documentHint}>
+                <Ionicons name="scan" size={16} color="white" />
+                <Text style={styles.documentHintText}>Solo se capturará el área dentro del marco</Text>
+              </View>
+            )}
           </View>
 
-          {/* ✅ CONSEJOS - CON zIndex MEDIO (POR ENCIMA DE GUÍAS, DEBAJO DE BOTONES) */}
+          {/* CONSEJOS */}
           {showTipsOverlay && (
             <View style={[styles.instructionsContainer, { zIndex: 50 }]}>
               <TouchableOpacity 
@@ -397,10 +547,11 @@ const CameraScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color="white" />
               </TouchableOpacity>
               <Text style={styles.instructionsTitle}>📸 Consejos para mejor calidad:</Text>
-              <Text style={styles.instructionsText}>• Mantén el dispositivo estable</Text>
-              <Text style={styles.instructionsText}>• Buena iluminación natural</Text>
-              <Text style={styles.instructionsText}>• Encuadra toda la factura</Text>
-              <Text style={styles.instructionsText}>• Evita sombras y reflejos</Text>
+              <Text style={styles.instructionsText}>• 📄 Coloca la factura dentro del marco verde</Text>
+              <Text style={styles.instructionsText}>• 🎯 Solo se capturará el área dentro del marco</Text>
+              <Text style={styles.instructionsText}>• 💡 Buena iluminación natural</Text>
+              <Text style={styles.instructionsText}>• 📱 Mantén el teléfono paralelo a la factura</Text>
+              <Text style={styles.instructionsText}>• ⚡ Usa flash solo si hay sombras</Text>
               <TouchableOpacity 
                 style={styles.moreTipsButton}
                 onPress={() => {
@@ -442,7 +593,7 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  // ✅ ESTILOS PARA GUÍAS - SIN pointerEvents PARA NO BLOQUEAR TOUCH
+  // GUÍAS MEJORADAS
   guideOverlay: {
     position: 'absolute',
     top: 0,
@@ -452,61 +603,107 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
-    pointerEvents: 'none', // ✅ IMPORTANTE: NO INTERCEPTA TOUCHES
+    pointerEvents: 'none',
   },
   guideFrame: {
-    width: '80%',
-    height: '60%',
+    width: '85%', // ✅ 85% del ancho - SOLO ESTO SE CAPTURARÁ
+    height: '65%', // ✅ 65% del alto - SOLO ESTO SE CAPTURARÁ
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(0, 255, 0, 0.6)',
     backgroundColor: 'transparent',
-    pointerEvents: 'none', // ✅ NO INTERCEPTA TOUCHES
+    pointerEvents: 'none',
+  },
+  guideFrameEnhanced: {
+    borderColor: '#00FF00',
+    borderWidth: 3,
+    backgroundColor: 'rgba(0, 255, 0, 0.1)',
   },
   cornerTL: {
     position: 'absolute',
     top: -2,
     left: -2,
-    width: 20,
-    height: 20,
-    borderLeftWidth: 3,
-    borderTopWidth: 3,
+    width: 25,
+    height: 25,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
     borderColor: '#00FF00',
-    pointerEvents: 'none', // ✅ NO INTERCEPTA TOUCHES
   },
   cornerTR: {
     position: 'absolute',
     top: -2,
     right: -2,
-    width: 20,
-    height: 20,
-    borderRightWidth: 3,
-    borderTopWidth: 3,
+    width: 25,
+    height: 25,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
     borderColor: '#00FF00',
-    pointerEvents: 'none',
   },
   cornerBL: {
     position: 'absolute',
     bottom: -2,
     left: -2,
-    width: 20,
-    height: 20,
-    borderLeftWidth: 3,
-    borderBottomWidth: 3,
+    width: 25,
+    height: 25,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
     borderColor: '#00FF00',
-    pointerEvents: 'none',
   },
   cornerBR: {
     position: 'absolute',
     bottom: -2,
     right: -2,
-    width: 20,
-    height: 20,
-    borderRightWidth: 3,
-    borderBottomWidth: 3,
+    width: 25,
+    height: 25,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
     borderColor: '#00FF00',
-    pointerEvents: 'none',
   },
-  // ✅ CONSEJOS - CON pointerEvents: 'auto' PARA SER INTERACTIVOS
+  // ✅ NUEVOS: Líneas de guía
+  guideLineVertical: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 1,
+    backgroundColor: 'rgba(0, 255, 0, 0.3)',
+  },
+  guideLineHorizontal: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    height: 1,
+    backgroundColor: 'rgba(0, 255, 0, 0.3)',
+  },
+  // ✅ NUEVO: Indicador de posición
+  documentHint: {
+    position: 'absolute',
+    top: '80%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  documentHintText: {
+    color: 'white',
+    marginLeft: 8,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  // ✅ NUEVO: Botón detección de bordes
+  edgeDetectionButton: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 10,
+    borderRadius: 20,
+    marginLeft: 10,
+  },
+  edgeDetectionActive: {
+    backgroundColor: 'rgba(0, 255, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: '#00FF00',
+  },
   instructionsContainer: {
     position: 'absolute',
     bottom: 120,
@@ -517,7 +714,6 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     borderWidth: 1,
     borderColor: '#007AFF',
-    pointerEvents: 'auto', // ✅ PERMITE INTERACCIÓN
   },
   closeTipsButton: {
     position: 'absolute',
@@ -567,7 +763,6 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  // ✅ ELEMENTOS INTERACTIVOS - CON pointerEvents: 'auto' (POR DEFECTO)
   header: {
     position: 'absolute',
     top: 50,
@@ -576,7 +771,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    pointerEvents: 'auto',
   },
   counterBadge: {
     flexDirection: 'row',
@@ -626,7 +820,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'flex-end',
     marginBottom: 30,
-    pointerEvents: 'auto',
   },
   tipsButton: {
     alignSelf: 'flex-end',
@@ -679,7 +872,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    pointerEvents: 'auto',
   },
   multiPageButton: {
     flexDirection: 'row',
@@ -698,7 +890,6 @@ const styles = StyleSheet.create({
   bottomContainer: {
     padding: 20,
     backgroundColor: 'rgba(0,0,0,0.8)',
-    pointerEvents: 'auto',
   },
   signOutButton: {
     flexDirection: 'row',
